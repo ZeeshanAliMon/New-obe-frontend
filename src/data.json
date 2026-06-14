@@ -1,0 +1,54 @@
+{
+  "departments": [
+    { 
+      "id": "cs", 
+      "name": "Computer Science & IT",
+      "vision": "To lead the region in computing innovation and digital transformation.",
+      "mission": "Preparing future leaders through rigorous technical training and research excellence in computing."
+    },
+    { 
+      "id": "ee", 
+      "name": "Electrical Engineering",
+      "vision": "To be the hub of sustainable energy and industrial automation research.",
+      "mission": "Empowering students with advanced engineering skills for the evolving energy landscape."
+    }
+  ],
+  "programs": [
+    {
+      "id": "bscs",
+      "name": "BS Computer Science",
+      "code": "BSCS",
+      "departmentId": "cs",
+      "pos": [
+        { "id": "po1", "text": "Apply knowledge of computing fundamentals to solve complex problems.", "mappedGAs": ["ga1", "ga2"] },
+        { "id": "po2", "text": "Design and develop efficient software systems using modern standards.", "mappedGAs": ["ga3", "ga5"] },
+        { "id": "po3", "text": "Work effectively in multidisciplinary teams as a leader or member.", "mappedGAs": ["ga9", "ga10"] },
+        { "id": "po4", "text": "Communicate complex technical concepts to diverse audiences.", "mappedGAs": ["ga10"] }
+      ]
+    },
+    {
+      "id": "bsse",
+      "name": "BS Software Engineering",
+      "code": "BSSE",
+      "departmentId": "cs",
+      "pos": [
+        { "id": "po1", "text": "Analyze high-level requirements into scalable software architecture.", "mappedGAs": ["ga2", "ga3"] },
+        { "id": "po2", "text": "Demonstrate proficiency in modern software engineering lifecycles.", "mappedGAs": ["ga5"] },
+        { "id": "po3", "text": "Understand professional and ethical responsibilities.", "mappedGAs": ["ga8"] },
+        { "id": "po4", "text": "Adapt to emerging technologies through lifelong learning.", "mappedGAs": ["ga12"] }
+      ]
+    }
+  ],
+  "gas": [
+    { "id": "ga1", "name": "Academic Education", "description": "Knowledge of engineering fundamentals." },
+    { "id": "ga2", "name": "Problem Analysis", "description": "Identify, research, and analyze complex problems." },
+    { "id": "ga3", "name": "Design/Development", "description": "Solutions for complex problems." },
+    { "id": "ga4", "name": "Investigation", "description": "In-depth investigation of complex problems." },
+    { "id": "ga5", "name": "Tool Usage", "description": "Application of modern software tools." },
+    { "id": "ga6", "name": "The Engineer & Society", "description": "Societal, health, and safety issues." },
+    { "id": "ga8", "name": "Ethics", "description": "Professional ethics and norms." },
+    { "id": "ga9", "name": "Individual & Teamwork", "description": "Work as individual or in teams." },
+    { "id": "ga10", "name": "Communication", "description": "Effective communication on complex activities." },
+    { "id": "ga12", "name": "Lifelong Learning", "description": "Engage in independent learning." }
+  ]
+}

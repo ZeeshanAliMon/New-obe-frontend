@@ -1,0 +1,18 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-display: "Space Grotesk", sans-serif;
+}
+
+@utility frosted-bg {
+  background-color: #e0e7ff;
+  background-image: 
+    radial-gradient(at 0% 0%, #cbd5e1 0px, transparent 50%), 
+    radial-gradient(at 100% 0%, #e0e7ff 0px, transparent 50%), 
+    radial-gradient(at 100% 100%, #f1f5f9 0px, transparent 50%), 
+    radial-gradient(at 0% 100%, #dbeafe 0px, transparent 50%);
+}
+

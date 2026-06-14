@@ -1,0 +1,8 @@
+{
+  "name": "Iqra University OBE",
+  "description": "A comprehensive system for managing University Outcome Based Education, including mission, vision, and program outcomes mapping.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
