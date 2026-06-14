@@ -5,6 +5,8 @@
       (function() {
         try {
           var originalFetch = window.fetch;
+
+          al
           var currentFetch = originalFetch;
           Object.defineProperty(window, 'fetch', {
             get: function() { return currentFetch; },
