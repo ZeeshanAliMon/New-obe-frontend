@@ -359,9 +359,29 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
     apiService.getAllData().then(res => {
       if (active) {
         setObeData(res);
+        if (res.departments && res.departments.length > 0) {
+          const firstDeptId = res.departments[0].id;
+          setAddDeptId(firstDeptId);
+          setEditDeptId(firstDeptId);
+          const firstProg = res.programs?.find(p => p.departmentId === firstDeptId)?.id || '';
+          setAddProgramId(firstProg);
+          setEditProgramId(firstProg);
+        }
       }
     }).catch(err => {
-      console.warn("Could not load departments & programs dynamically from backend", err);
+      console.warn("Could not load departments & programs dynamically from backend, checking offline storage...", err);
+      const offline = apiService.getLocalStorageData();
+      if (active && offline) {
+        setObeData(offline);
+        if (offline.departments && offline.departments.length > 0) {
+          const firstDeptId = offline.departments[0].id;
+          setAddDeptId(firstDeptId);
+          setEditDeptId(firstDeptId);
+          const firstProg = offline.programs?.find(p => p.departmentId === firstDeptId)?.id || '';
+          setAddProgramId(firstProg);
+          setEditProgramId(firstProg);
+        }
+      }
     });
 
     const fetchCourses = async () => {
@@ -905,11 +925,9 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
     if (!addCourseCode || !addCourseTitle) return;
 
     const deptObj = obeData?.departments?.find(d => d.id === addDeptId);
-    const deptName = deptObj ? deptObj.name : (addDeptId === 'computing' 
-      ? 'Department of Computing and Technology' 
-      : 'Department of Business Administration');
+    const deptName = deptObj ? deptObj.name : addDeptId;
 
-    const programObj = obeData?.programs?.find(p => p.id === addProgramId) || DEPARTMENT_PROGRAMS[addDeptId]?.find(p => p.id === addProgramId);
+    const programObj = obeData?.programs?.find(p => p.id === addProgramId);
 
     const newCourse: InstructorCourse = {
       id: `course-${Date.now()}`,
@@ -937,7 +955,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
     setEditCourseCode(course.code);
     setEditCourseTitle(course.title);
     setEditDeptId(course.departmentId);
-    setEditProgramId(course.programId || (course.departmentId === 'computing' ? 'bscs' : 'bba'));
+    setEditProgramId(course.programId || '');
     setEditCreditHours(course.creditHours);
     setIsEditingCourse(true);
   };
@@ -947,11 +965,9 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
     if (!editCourseCode || !editCourseTitle) return;
 
     const deptObj = obeData?.departments?.find(d => d.id === editDeptId);
-    const deptName = deptObj ? deptObj.name : (editDeptId === 'computing' 
-      ? 'Department of Computing and Technology' 
-      : 'Department of Business Administration');
+    const deptName = deptObj ? deptObj.name : editDeptId;
 
-    const programObj = obeData?.programs?.find(p => p.id === editProgramId) || DEPARTMENT_PROGRAMS[editDeptId]?.find(p => p.id === editProgramId);
+    const programObj = obeData?.programs?.find(p => p.id === editProgramId);
 
     setCourses(prev => prev.map(c => {
       if (c.id === activeCourseId) {
@@ -2210,163 +2226,119 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                 </p>
               </div>
 
-              {/* DEPARTMENT: COMPUTING & TECH */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5 border-b border-indigo-100 pb-1">
-                  <span className="w-1.5 h-3 rounded bg-indigo-600 shrink-0"></span>
-                  <span className="text-[9px] font-extrabold text-indigo-950 uppercase tracking-widest font-mono">
-                    Department of Computing & Tech
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  {courses.filter(c => c.departmentId === 'computing').map(c => {
-                    const isSelected = c.id === activeCourseId;
-                    return (
-                      <div
-                        key={c.id}
-                        onClick={() => {
-                          setActiveCourseId(c.id);
-                          setUnitEditingCategory(null);
-                        }}
-                        className={`group p-3 rounded-xl border text-left cursor-pointer transition-all flex items-start justify-between gap-3 ${
-                          isSelected
-                            ? 'bg-indigo-50/50 border-indigo-600 text-slate-900 shadow-sm ring-1 ring-indigo-600 pl-3.5 border-l-4 border-l-indigo-600'
-                            : 'bg-slate-50/55 border-slate-200 text-slate-700 hover:bg-slate-100/60 hover:border-slate-300'
-                        }`}
-                      >
-                        <div className="space-y-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-md tracking-wider ${
-                              isSelected ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-650'
-                            }`}>
-                              {c.code}
-                            </span>
-                            {c.programId && (
-                              <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-md tracking-wide ${
-                                isSelected ? 'bg-indigo-100/70 text-indigo-800' : 'bg-slate-200/75 text-slate-600'
-                              }`}>
-                                {c.programId.toUpperCase()}
-                              </span>
-                            )}
-                          </div>
-                          <h4 className={`text-xs font-bold truncate ${isSelected ? 'text-indigo-950 font-extrabold' : 'text-slate-800'}`}>
-                            {c.title}
-                          </h4>
-                          <p className="text-[10px] text-slate-500 font-mono">
-                            {c.creditHours} Cr. Hr • {c.students.length} Students
-                          </p>
-                        </div>
-                        
-                        {/* Action buttons */}
-                        <div className="flex items-center gap-1 shrink-0 self-center">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenEditCourse(c);
-                            }}
-                            className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-indigo-605 transition-colors cursor-pointer"
-                            title="Edit Course Specification"
-                          >
-                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteCourse(c.id);
-                            }}
-                            className="p-1 hover:bg-rose-50 rounded text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                            title="Delete Course Specification"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {courses.filter(c => c.departmentId === 'computing').length === 0 && (
-                    <p className="text-[10px] text-slate-400 italic py-2 pl-1 select-none font-sans font-medium">No Computing courses defined.</p>
-                  )}
-                </div>
-              </div>
+              {/* GROUPED DEPARTMENTS */}
+              {(() => {
+                const departmentsList = obeData?.departments && obeData.departments.length > 0
+                  ? obeData.departments
+                  : Array.from(new Set(courses.map(c => c.departmentId))).map((depId: string) => ({
+                      id: depId,
+                      name: depId === 'computing'
+                        ? 'Department of Computing and Technology'
+                        : depId === 'business'
+                          ? 'Department of Business Administration'
+                          : `Department of ${depId.toUpperCase()}`
+                    }));
 
-              {/* DEPARTMENT: BUSINESS ADMINISTRATION */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5 border-b border-rose-100 pb-1">
-                  <span className="w-1.5 h-3 rounded bg-amber-500 shrink-0"></span>
-                  <span className="text-[9px] font-extrabold text-amber-950 uppercase tracking-widest font-mono">
-                    Department of Business Admin
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  {courses.filter(c => c.departmentId === 'business').map(c => {
-                    const isSelected = c.id === activeCourseId;
-                    return (
-                      <div
-                        key={c.id}
-                        onClick={() => {
-                          setActiveCourseId(c.id);
-                          setUnitEditingCategory(null);
-                        }}
-                        className={`group p-3 rounded-xl border text-left cursor-pointer transition-all flex items-start justify-between gap-3 ${
-                          isSelected
-                            ? 'bg-amber-50/15 border-amber-600 text-slate-900 shadow-sm ring-1 ring-amber-600 pl-3.5 border-l-4 border-l-amber-500'
-                            : 'bg-slate-50/55 border-slate-200 text-slate-700 hover:bg-slate-100/60 hover:border-slate-300'
-                        }`}
-                      >
-                        <div className="space-y-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-md tracking-wider ${
-                              isSelected ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-650'
-                            }`}>
-                              {c.code}
-                            </span>
-                            {c.programId && (
-                              <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-md tracking-wide ${
-                                isSelected ? 'bg-amber-100/70 text-amber-900' : 'bg-slate-200/75 text-slate-650'
-                              }`}>
-                                {c.programId.toUpperCase()}
-                              </span>
-                            )}
-                          </div>
-                          <h4 className={`text-xs font-bold truncate ${isSelected ? 'text-amber-950 font-extrabold' : 'text-slate-800'}`}>
-                            {c.title}
-                          </h4>
-                          <p className="text-[10px] text-slate-500 font-mono">
-                            {c.creditHours} Cr. Hr • {c.students.length} Students
-                          </p>
-                        </div>
-                        
-                        {/* Action buttons */}
-                        <div className="flex items-center gap-1 shrink-0 self-center">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenEditCourse(c);
-                            }}
-                            className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-indigo-605 transition-colors cursor-pointer"
-                            title="Edit Course Specification"
-                          >
-                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteCourse(c.id);
-                            }}
-                            className="p-1 hover:bg-rose-50 rounded text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                            title="Delete Course Specification"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                return departmentsList.map((dept) => {
+                  const deptCourses = courses.filter(c => c.departmentId === dept.id);
+                  const isComputing = dept.id === 'computing';
+                  const isBusiness = dept.id === 'business';
+                  
+                  // Accent color mapping
+                  const dotColor = isComputing ? 'bg-indigo-600' : isBusiness ? 'bg-amber-500' : 'bg-rose-500';
+                  const borderBorder = isComputing ? 'border-indigo-100' : isBusiness ? 'border-rose-100' : 'border-slate-150';
+                  const textHeaderColor = isComputing ? 'text-indigo-950' : isBusiness ? 'text-amber-950' : 'text-slate-800';
+                  
+                  return (
+                    <div className="space-y-2" key={dept.id}>
+                      <div className={`flex items-center gap-1.5 border-b ${borderBorder} pb-1`}>
+                        <span className={`w-1.5 h-3 rounded ${dotColor} shrink-0`}></span>
+                        <span className={`text-[9px] font-extrabold ${textHeaderColor} uppercase tracking-widest font-mono`}>
+                          {dept.name}
+                        </span>
                       </div>
-                    );
-                  })}
-                  {courses.filter(c => c.departmentId === 'business').length === 0 && (
-                    <p className="text-[10px] text-slate-400 italic py-2 pl-1 select-none font-sans font-medium">No Business courses defined.</p>
-                  )}
-                </div>
-              </div>
+                      <div className="space-y-2">
+                        {deptCourses.map(c => {
+                          const isSelected = c.id === activeCourseId;
+                          const selectedStyle = isComputing 
+                            ? 'bg-indigo-50/50 border-indigo-600 text-slate-900 shadow-sm ring-1 ring-indigo-600 pl-3.5 border-l-4 border-l-indigo-600'
+                            : isBusiness
+                              ? 'bg-amber-50/15 border-amber-600 text-slate-900 shadow-sm ring-1 ring-amber-600 pl-3.5 border-l-4 border-l-amber-500'
+                              : 'bg-rose-50/15 border-rose-600 text-slate-900 shadow-sm ring-1 ring-rose-600 pl-3.5 border-l-4 border-l-rose-500';
+                          return (
+                            <div
+                              key={c.id}
+                              onClick={() => {
+                                setActiveCourseId(c.id);
+                                setUnitEditingCategory(null);
+                              }}
+                              className={`group p-3 rounded-xl border text-left cursor-pointer transition-all flex items-start justify-between gap-3 ${
+                                isSelected
+                                  ? selectedStyle
+                                  : 'bg-slate-50/55 border-slate-200 text-slate-700 hover:bg-slate-100/60 hover:border-slate-300'
+                              }`}
+                            >
+                              <div className="space-y-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-md tracking-wider ${
+                                    isSelected 
+                                      ? (isComputing ? 'bg-indigo-100 text-indigo-700' : isBusiness ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-700') 
+                                      : 'bg-slate-200 text-slate-650'
+                                  }`}>
+                                    {c.code}
+                                  </span>
+                                  {c.programId && (
+                                    <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-md tracking-wide ${
+                                      isSelected
+                                        ? (isComputing ? 'bg-indigo-100/70 text-indigo-850' : isBusiness ? 'bg-amber-100/70 text-amber-850' : 'bg-rose-100/70 text-rose-850') 
+                                        : 'bg-slate-200/75 text-slate-605'
+                                    }`}>
+                                      {c.programId.toUpperCase()}
+                                    </span>
+                                  )}
+                                </div>
+                                <h4 className={`text-xs font-bold truncate ${isSelected ? 'text-slate-900 font-extrabold' : 'text-slate-800'}`}>
+                                  {c.title}
+                                </h4>
+                                <p className="text-[10px] text-slate-500 font-mono">
+                                  {c.creditHours} Cr. Hr • {c.students.length} Students
+                                </p>
+                              </div>
+                              
+                              {/* Action buttons */}
+                              <div className="flex items-center gap-1 shrink-0 self-center">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenEditCourse(c);
+                                  }}
+                                  className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-indigo-605 transition-colors cursor-pointer"
+                                  title="Edit Course Specification"
+                                >
+                                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteCourse(c.id);
+                                  }}
+                                  className="p-1 hover:bg-rose-50 rounded text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                                  title="Delete Course Specification"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {deptCourses.length === 0 && (
+                          <p className="text-[10px] text-slate-400 italic py-2 pl-1 select-none font-sans font-medium">No courses defined.</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
 
               {/* DEFINED COURSE ACTION */}
               <button
@@ -5536,8 +5508,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                     onChange={(e) => {
                       const dept = e.target.value;
                       setAddDeptId(dept);
-                      const firstProg = obeData?.programs?.find(p => p.departmentId === dept)?.id 
-                        || (dept === 'computing' ? 'bscs' : 'bba');
+                      const firstProg = obeData?.programs?.find(p => p.departmentId === dept)?.id || '';
                       setAddProgramId(firstProg);
                     }}
                     className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-950 text-xs w-full focus:ring-2 focus:ring-indigo-150 outline-none"
@@ -5547,10 +5518,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                         <option key={d.id} value={d.id}>{d.name}</option>
                       ))
                     ) : (
-                      <>
-                        <option value="computing">Department of Computing and Technology</option>
-                        <option value="business">Department of Business Administration</option>
-                      </>
+                      <option value="">Loading Departments...</option>
                     )}
                   </select>
                 </div>
@@ -5571,11 +5539,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                         </option>
                       ))
                     ) : (
-                      (DEPARTMENT_PROGRAMS[addDeptId] || []).map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))
+                      <option value="">Loading Programs...</option>
                     )}
                   </select>
                 </div>
@@ -5678,8 +5642,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                     onChange={(e) => {
                       const dept = e.target.value;
                       setEditDeptId(dept);
-                      const firstProg = obeData?.programs?.find(p => p.departmentId === dept)?.id 
-                        || (dept === 'computing' ? 'bscs' : 'bba');
+                      const firstProg = obeData?.programs?.find(p => p.departmentId === dept)?.id || '';
                       setEditProgramId(firstProg);
                     }}
                     className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-950 text-xs w-full focus:ring-2 focus:ring-indigo-150 outline-none"
@@ -5689,10 +5652,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                         <option key={d.id} value={d.id}>{d.name}</option>
                       ))
                     ) : (
-                      <>
-                        <option value="computing">Department of Computing and Technology</option>
-                        <option value="business">Department of Business Administration</option>
-                      </>
+                      <option value="">Loading Departments...</option>
                     )}
                   </select>
                 </div>
@@ -5713,11 +5673,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                         </option>
                       ))
                     ) : (
-                      (DEPARTMENT_PROGRAMS[editDeptId] || []).map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))
+                      <option value="">Loading Programs...</option>
                     )}
                   </select>
                 </div>

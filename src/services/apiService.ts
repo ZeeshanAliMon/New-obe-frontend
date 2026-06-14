@@ -387,7 +387,10 @@ export const apiService = {
       const response = await fetchWithTimeout(`${BASE_URL}/programs/`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          ...data,
+          slug: data.code.toLowerCase()
+        }),
       }, 8000);
       if (!response.ok) throw new Error('Failed to create program on server');
       const responseData = await response.json();
@@ -413,7 +416,10 @@ export const apiService = {
       const response = await fetchWithTimeout(`${BASE_URL}/courses/`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          ...data,
+          slug: data.id
+        }),
       }, 8000);
       if (!response.ok) throw new Error('Failed to create course on server');
       const responseData = await response.json();
