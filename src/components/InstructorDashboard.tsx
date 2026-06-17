@@ -286,20 +286,6 @@ const normalizeCourse = (course: InstructorCourse): InstructorCourse => {
   };
 };
 
-export const DEPARTMENT_PROGRAMS: Record<string, { id: string; name: string }[]> = {
-  computing: [
-    { id: 'bscs', name: 'Bachelor of Science in Computer Science (BSCS)' },
-    { id: 'bsse', name: 'Bachelor of Science in Software Engineering (BSSE)' },
-    { id: 'bsai', name: 'Bachelor of Science in Artificial Intelligence (BSAI)' },
-    { id: 'bsit', name: 'BS Information Technology (BSIT)' },
-  ],
-  business: [
-    { id: 'bba', name: 'Bachelor of Business Administration (BBA)' },
-    { id: 'mba', name: 'Master of Business Administration (MBA)' },
-    { id: 'bsaf', name: 'BS Accounting & Finance (BSAF)' },
-  ]
-};
-
 const distributeUnitWeightages = (n: number): number[] => {
   if (n <= 0) return [];
   if (n === 1) return [100];
@@ -2108,7 +2094,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
           {/* Quick status display */}
           <div className="flex flex-col items-end gap-0.5">
             <span className="text-[10px] text-slate-500 font-mono tracking-tight font-semibold hidden sm:inline">
-              User: <strong className="text-indigo-950 font-extrabold">{selectedCourse ? selectedCourse.departmentName : 'Department of Computing and Technology'} Instructor</strong>
+              User: <strong className="text-indigo-950 font-extrabold">{selectedCourse ? `${selectedCourse.departmentName || selectedCourse.departmentId} Instructor` : 'Select a course'}</strong>
             </span>
           </div>
 
@@ -2126,7 +2112,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
             <div className="flex items-center gap-2 bg-slate-100/70 border border-slate-200 px-3 py-1 rounded-lg animate-fade-in">
               <span className="text-[9px] text-indigo-950 font-bold tracking-wide uppercase">DEPARTMENT:</span>
               <span className="text-slate-800 text-xs font-bold font-sans">
-                {selectedCourse ? selectedCourse.departmentName : 'Department of Computing and Technology'}
+                {selectedCourse ? (selectedCourse.departmentName || selectedCourse.departmentId) : 'Select a course'}
               </span>
             </div>
 
