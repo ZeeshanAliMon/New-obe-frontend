@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Outer deep blue frame -->
+  <rect width="100" height="100" fill="#1b3d6d"/>
+  <!-- White inner background -->
+  <rect x="5" y="5" width="90" height="90" fill="white"/>
+  <!-- Elegant Serif IU letters in deep blue -->
+  <text x="50" y="72" font-family="Georgia, 'Times New Roman', Times, serif" font-size="62" font-weight="bold" fill="#1b3d6d" text-anchor="middle">IU</text>
+</svg>

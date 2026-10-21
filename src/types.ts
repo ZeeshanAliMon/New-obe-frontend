@@ -1,4 +1,14 @@
-export type UserType = 'student' | 'instructor' | 'QA' | 'admin' | 'qa';
+export type UserType = 'student' | 'instructor' | 'QA' | 'admin' | 'qa' | 'admission' | 'dept_admin';
+
+export interface Student {
+  regNo: string;
+  name: string;
+  departmentId: string;
+  programId: string;
+  batch: string;
+  semester?: string;
+  email?: string;
+}
 
 export interface GA {
   id: string;
@@ -39,6 +49,8 @@ export interface Course {
   mappedGAs: string[]; // array of GA ids
   departmentId: string;
   programId?: string; // separate courses for each program
+  creditHours?: number;
+  courseType?: 'Theory' | 'Lab';
 }
 
 export interface OBEData {
@@ -74,6 +86,7 @@ export interface CourseStudent {
   regNo: string;
   name: string;
   marks?: Record<string, number>;
+  student_marks?: Record<string, number>;
 }
 
 export interface OBEQuestion {
@@ -89,6 +102,7 @@ export interface InstructorCourse {
   id: string;
   code: string;
   title: string;
+  courseType?: 'Theory' | 'Lab';
   departmentId: string;
   departmentName: string;
   programId?: string;
@@ -99,7 +113,12 @@ export interface InstructorCourse {
   students: CourseStudent[];
   obeQuestions?: OBEQuestion[];
   obeMarks?: Record<string, Record<string, number>>; // studentRegNo -> { questionId: marks }
+  obe_marks?: Record<string, Record<string, number>>;
+  studentMarks?: Record<string, number>;
+  student_marks?: Record<string, number>;
   cloCount?: number;
   selectedGradingSystem?: string;
   customGradingSystem?: { grade: string; percentage: string; points: string }[];
+  academicYear?: string;
+  status?: 'active' | 'closed';
 }

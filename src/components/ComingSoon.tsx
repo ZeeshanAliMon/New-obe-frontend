@@ -7,6 +7,12 @@ interface ComingSoonProps {
 }
 
 export default function ComingSoon({ userType, onLogout }: ComingSoonProps) {
+  const getDisplayName = (type: string) => {
+    if (type === 'dept_admin') return 'Department Administrator';
+    if (type === 'student') return 'Student';
+    return type.charAt(0).toUpperCase() + type.slice(1);
+  };
+
   return (
     <div className="min-h-screen frosted-bg flex flex-col items-center justify-center p-4">
       <motion.div
@@ -14,10 +20,15 @@ export default function ComingSoon({ userType, onLogout }: ComingSoonProps) {
         animate={{ opacity: 1, y: 0 }}
         className="bg-white/40 backdrop-blur-xl border border-white/50 p-8 rounded-[32px] shadow-xl max-w-md w-full text-center"
       >
-        <div className="mx-auto w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-2xl shadow-lg mb-4">IU</div>
+        <img 
+          src="/iqralogo.png" 
+          alt="Iqra University Logo" 
+          className="mx-auto w-56 h-20 object-contain mb-5 bg-white p-2.5 rounded-2xl shadow-sm border border-slate-100"
+          referrerPolicy="no-referrer"
+        />
         <h1 className="text-3xl font-display font-medium text-slate-800 mb-4">Coming Soon</h1>
         <p className="text-slate-600 mb-8 font-sans">
-          The dashboard for <span className="font-semibold text-indigo-950">{userType}</span> is currently under development.
+          The dashboard for <span className="font-semibold text-indigo-950">{getDisplayName(userType)}</span> is currently under development.
         </p>
         <button
           onClick={onLogout}

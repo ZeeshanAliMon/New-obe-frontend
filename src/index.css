@@ -16,3 +16,15 @@
     radial-gradient(at 0% 100%, #dbeafe 0px, transparent 50%);
 }
 
+@media print {
+  body, html {
+    background: white !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+

@@ -4,22 +4,38 @@
     <script>
       (function() {
         try {
-          var originalFetch = window.fetch;
-          var currentFetch = originalFetch;
-          Object.defineProperty(window, 'fetch', {
-            get: function() { return currentFetch; },
-            set: function(val) { currentFetch = val; },
-            configurable: true,
-            enumerable: true
-          });
+          var originalFetch = window.fetch || globalThis.fetch;
+          if (originalFetch) {
+            var currentFetch = originalFetch;
+            try {
+              Object.defineProperty(window, 'fetch', {
+                get: function() { return currentFetch; },
+                set: function(val) { currentFetch = val; },
+                configurable: true,
+                enumerable: true
+              });
+            } catch (e1) {
+              try {
+                Object.defineProperty(Window.prototype, 'fetch', {
+                  get: function() { return currentFetch; },
+                  set: function(val) { currentFetch = val; },
+                  configurable: true,
+                  enumerable: true
+                });
+              } catch (e2) {
+                console.warn("Unable to patch fetch on Window.prototype:", e2);
+              }
+            }
+          }
         } catch (e) {
-          console.warn("Unable to patch window.fetch property configuration:", e);
+          console.warn("Unable to patch window.fetch:", e);
         }
       })();
     </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Iqra University - OBE Portal</title>
   </head>
   <body>
     <div id="root"></div>
