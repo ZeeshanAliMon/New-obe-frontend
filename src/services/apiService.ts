@@ -772,46 +772,9 @@ export const apiService = {
         ic.obeMarks = ic.obe_marks;
       });
 
-      // Reconcile instructor courses with the general courses database
-      try {
-        const coursesRes = await fetchWithTimeout(`${BASE_URL}/courses/`, { headers: getHeaders() }, 10000);
-        if (coursesRes.ok) {
-          const coursesData = await coursesRes.json();
-          const generalCourses = Array.isArray(coursesData) ? coursesData.map(normalizeCourse) : [];
-          if (generalCourses.length > 0) {
-            data.forEach((ic: any) => {
-              // Match by exact ID or course code (with loose matching for trailing 'L')
-              const match = generalCourses.find(gc => {
-                const gcId = gc.id ? String(gc.id).toLowerCase().trim() : '';
-                const icId = ic.id ? String(ic.id).toLowerCase().trim() : '';
-                if (gcId && icId && gcId === icId) return true;
-
-                const gcCode = gc.code ? String(gc.code).toUpperCase().trim() : '';
-                const icCode = ic.code ? String(ic.code).toUpperCase().trim() : '';
-                
-                if (gcCode && icCode) {
-                  if (gcCode === icCode) return true;
-                  // Strip trailing 'L' for loose matching
-                  const cleanGc = gcCode.endsWith('L') ? gcCode.slice(0, -1) : gcCode;
-                  const cleanIc = icCode.endsWith('L') ? icCode.slice(0, -1) : icCode;
-                  if (cleanGc === cleanIc) return true;
-                }
-                return false;
-              });
-              if (match) {
-                ic.code = match.code;
-                ic.title = match.title;
-                ic.courseType = match.courseType;
-                ic.course_subtype = match.courseType;
-                ic.courseSubtype = match.courseType;
-                ic.subtype = match.courseType;
-              }
-            });
-          }
-        }
-      } catch (e) {
-        console.warn("Could not fetch general courses to reconcile with instructor courses:", e);
-      }
+      // Reconciliation removed — backend already returns correct code, title,
+      // and courseType in the instructor courses response. The extra GET /api/courses/
+      // call was causing 2 API calls on every instructor dashboard load for no benefit.
 
       const isBackend = isBackendUser();
       if (!isBackend) {
@@ -852,12 +815,13 @@ export const apiService = {
       }, 8000);
 
       if (response.status === 207) {
+        // Partial success — some courses saved, some failed.
+        // Use what was saved instead of throwing and losing everything.
         const data = await response.json().catch(() => ({}));
-        if (data && data.errors && Array.isArray(data.errors)) {
-          const failedCoursesMsg = data.errors.map((e: any) => `${e.courseCode || e.course_code || 'Course'}: ${e.message || e.error || 'Unknown error'}`).join(', ');
-          throw new Error(`Some course mappings failed to sync: ${failedCoursesMsg}`);
+        if (data.errors?.length) {
+          console.warn('Some courses failed to sync:', data.errors);
         }
-        throw new Error('Partial success (207) but failed to sync some courses.');
+        return Array.isArray(data.courses) ? data.courses : courses;
       }
 
       if (!response.ok) {
@@ -1187,17 +1151,16 @@ export const apiService = {
     return res.json();
   },
 
-  async getStudentCourses(regNo?: string) {
-    const url = regNo 
-      ? `${BASE_URL}/student/courses/?regNo=${encodeURIComponent(regNo)}`
-      : `${BASE_URL}/student/courses/`;
-    const res = await fetchWithTimeout(url, {
+  async getStudentCourses() {
+    // No ?regNo param — backend resolves reg_no from the JWT token securely.
+    // Passing regNo as a query param was a security risk (any user could
+    // request another student's courses) and the backend was ignoring it anyway.
+    const res = await fetchWithTimeout(`${BASE_URL}/student/courses/`, {
       headers: getHeaders()
     }, 20000);
     if (!res.ok) throw new Error('Failed to fetch student courses');
     const data = await res.json();
     return extractList(data, 'courses');
-    // Returns: [{ id, code, title, creditHours, categories, studentMarks }]
   },
 
   async getCourseAssignments() {
