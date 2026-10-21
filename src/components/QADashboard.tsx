@@ -288,14 +288,10 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
       setLoading(true);
       const res = await apiService.getAllData();
       
-      const filteredDepts = (res.departments || []);
-      const filteredProgs = (res.programs || []).filter((p: any) => p.departmentId === activeDeptId);
-      const filteredCourses = (res.courses || []).filter((c: any) => c.departmentId === activeDeptId);
-
       setData({
-        departments: filteredDepts,
-        programs: filteredProgs,
-        courses: filteredCourses,
+        departments: res.departments || [],
+        programs: res.programs || [],
+        courses: res.courses || [],
         gas: res.gas || []
       });
       setError(null);
