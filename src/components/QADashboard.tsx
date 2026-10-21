@@ -4445,7 +4445,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                         }}
                         className="w-full p-3 font-medium bg-white border border-slate-300 rounded-lg outline-none focus:border-indigo-500 text-xs text-slate-800"
                       >
-                        {data?.departments.filter(d => d.id === activeDeptId).map(d => (
+                        {data?.departments.map(d => (
                           <option key={d.id} value={d.id}>{d.name}</option>
                         ))}
                       </select>
@@ -4531,7 +4531,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                         }}
                         className="w-full p-3 font-medium bg-white border border-slate-300 rounded-lg outline-none focus:border-indigo-500 text-xs text-slate-800"
                       >
-                        {data?.departments.filter(d => d.id === activeDeptId).map(d => (
+                        {data?.departments.map(d => (
                           <option key={d.id} value={d.id}>{d.name}</option>
                         ))}
                       </select>
