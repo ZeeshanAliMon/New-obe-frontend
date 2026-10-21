@@ -177,7 +177,7 @@ export default function FacultyDirectoryTab({
                     {courseCount} Active Courses
                   </span>
                   <button
-                    onClick={() => onDeleteTeacher(t.id)}
+                    onClick={() => onDeleteTeacher(t.employeeId || t.id)}
                     className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 p-1.5 hover:bg-rose-50 rounded-lg transition-all"
                     title="Remove teacher"
                   >
