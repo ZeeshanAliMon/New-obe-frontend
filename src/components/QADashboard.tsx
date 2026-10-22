@@ -920,11 +920,12 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
   // Filtered definitions of GAs matching selected program securely
   const filteredGAs = useMemo(() => {
     if (!data) return [];
-    // GAs are stored with program-prefixed IDs (e.g. BSCS1, BSSE1, BSAI1)
-    // Filter by active program prefix first, fall back to department if no match
-    const progPrefix = activeProgramId ? activeProgramId.toUpperCase() : '';
-    const byProgram = progPrefix
-      ? data.gas.filter(g => String(g.id).toUpperCase().startsWith(progPrefix))
+    // GAs are program-specific (programId = 'bscs', 'bsse', 'bba' etc.)
+    // Filter by active program first; fall back to department if no program selected
+    const byProgram = activeProgramId
+      ? data.gas.filter(g =>
+          String(g.programId).trim().toLowerCase() === String(activeProgramId).trim().toLowerCase()
+        )
       : [];
     const list = byProgram.length > 0
       ? byProgram
