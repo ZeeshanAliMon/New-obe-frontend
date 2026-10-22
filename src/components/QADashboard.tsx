@@ -920,9 +920,9 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
   // Filtered definitions of GAs matching selected program securely
   const filteredGAs = useMemo(() => {
     if (!data) return [];
-    // Only yield GAs matching the currently active program code specifically
-    const list = data.gas.filter(g => 
-      String(g.programId).trim().toLowerCase() === String(activeProgramId).trim().toLowerCase()
+    // GAs belong to departments, not programs — filter by active department
+    const list = data.gas.filter(g =>
+      String(g.departmentId).trim().toLowerCase() === String(activeDeptId).trim().toLowerCase()
     );
     // Sort naturally so that GA-10 comes after GA-9
     return [...list].sort((a, b) => naturalCompare(a.id, b.id));
