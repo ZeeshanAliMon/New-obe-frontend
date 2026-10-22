@@ -920,10 +920,17 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
   // Filtered definitions of GAs matching selected program securely
   const filteredGAs = useMemo(() => {
     if (!data) return [];
-    // GAs belong to departments, not programs — filter by active department
-    const list = data.gas.filter(g =>
-      String(g.departmentId).trim().toLowerCase() === String(activeDeptId).trim().toLowerCase()
-    );
+    // GAs are stored with program-prefixed IDs (e.g. BSCS1, BSSE1, BSAI1)
+    // Filter by active program prefix first, fall back to department if no match
+    const progPrefix = activeProgramId ? activeProgramId.toUpperCase() : '';
+    const byProgram = progPrefix
+      ? data.gas.filter(g => String(g.id).toUpperCase().startsWith(progPrefix))
+      : [];
+    const list = byProgram.length > 0
+      ? byProgram
+      : data.gas.filter(g =>
+          String(g.departmentId).trim().toLowerCase() === String(activeDeptId).trim().toLowerCase()
+        );
     // Sort naturally so that GA-10 comes after GA-9
     return [...list].sort((a, b) => naturalCompare(a.id, b.id));
   }, [data, activeDeptId, activeProgramId]);
