@@ -4006,54 +4006,54 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                         setMoreReportLoading(true);
                         try {
                           let result: any = null;
-                          const BASE = (apiService as any).BASE_URL || '/api';
+                          const BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'https://zeeshanbalti.pythonanywhere.com/api';
 
                           const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('access') || ''}` };
 
-                          const get = async (url: string) => {
-                            const r = await fetch(url, { headers });
+                          const get = async (path: string) => {
+                            const r = await fetch(`${BASE}${path}`, { headers });
                             if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
                             return r.json();
                           };
 
                           if (moreReportType === 'ga_program') {
                             if (!moreReportProgramId) throw new Error('Please select a programme.');
-                            result = await get(`/api/reports/program-ga-attainment/?programId=${encodeURIComponent(moreReportProgramId)}`);
+                            result = await get(`/reports/program-ga-attainment/?programId=${encodeURIComponent(moreReportProgramId)}`);
                           } else if (moreReportType === 'ga_batch') {
                             if (!moreReportBatch) throw new Error('Please select a batch.');
-                            result = await get(`/api/reports/batch-ga-attainment/?batch=${encodeURIComponent(moreReportBatch)}&departmentId=${encodeURIComponent(activeDeptId)}`);
+                            result = await get(`/reports/batch-ga-attainment/?batch=${encodeURIComponent(moreReportBatch)}&departmentId=${encodeURIComponent(activeDeptId)}`);
                           } else if (moreReportType === 'ga_semester') {
                             if (!moreReportProgramId) throw new Error('Please select a programme.');
-                            result = await get(`/api/reports/program-ga-attainment-by-semester/?programId=${encodeURIComponent(moreReportProgramId)}`);
+                            result = await get(`/reports/program-ga-attainment-by-semester/?programId=${encodeURIComponent(moreReportProgramId)}`);
                           } else if (moreReportType === 'clo_attainment') {
                             if (!moreReportCourseCode) throw new Error('Please select a course.');
                             const params = new URLSearchParams({ courseCode: moreReportCourseCode });
                             if (moreReportProgramId) params.set('programId', moreReportProgramId);
-                            result = await get(`/api/reports/course-attainment/?${params}`);
+                            result = await get(`/reports/course-attainment/?${params}`);
                           } else if (moreReportType === 'co_summary') {
                             if (!moreReportProgramId) throw new Error('Please select a programme.');
                             const params = new URLSearchParams({ programId: moreReportProgramId });
                             if (moreReportSemester) params.set('semester', moreReportSemester);
-                            result = await get(`/api/reports/co-attainment-summary/?${params}`);
+                            result = await get(`/reports/co-attainment-summary/?${params}`);
                           } else if (moreReportType === 'po_attainment') {
                             if (!moreReportProgramId) throw new Error('Please select a programme.');
-                            result = await get(`/api/reports/po-attainment/?programId=${encodeURIComponent(moreReportProgramId)}`);
+                            result = await get(`/reports/po-attainment/?programId=${encodeURIComponent(moreReportProgramId)}`);
                           } else if (moreReportType === 'at_risk') {
                             if (!moreReportProgramId) throw new Error('Please select a programme.');
                             const params = new URLSearchParams({ programId: moreReportProgramId });
                             if (moreReportSemester) params.set('semester', moreReportSemester);
-                            result = await get(`/api/reports/at-risk-students/?${params}`);
+                            result = await get(`/reports/at-risk-students/?${params}`);
                           } else if (moreReportType === 'gap_analysis') {
                             if (!moreReportProgramId) throw new Error('Please select a programme.');
-                            result = await get(`/api/reports/gap-analysis/?programId=${encodeURIComponent(moreReportProgramId)}`);
+                            result = await get(`/reports/gap-analysis/?programId=${encodeURIComponent(moreReportProgramId)}`);
                           } else if (moreReportType === 'instructor_performance') {
                             if (!activeDeptId) throw new Error('No active department selected.');
-                            result = await get(`/api/reports/instructor-performance/?departmentId=${encodeURIComponent(activeDeptId)}`);
+                            result = await get(`/reports/instructor-performance/?departmentId=${encodeURIComponent(activeDeptId)}`);
                           } else if (moreReportType === 'cohort_comparison') {
                             if (!moreReportProgramId) throw new Error('Please select a programme.');
                             const params = new URLSearchParams({ programId: moreReportProgramId });
                             if (moreReportGaId) params.set('gaId', moreReportGaId);
-                            result = await get(`/api/reports/cohort-comparison/?${params}`);
+                            result = await get(`/reports/cohort-comparison/?${params}`);
                           }
 
                           setMoreReportData(result);
