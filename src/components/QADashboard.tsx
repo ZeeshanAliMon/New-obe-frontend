@@ -33,14 +33,22 @@ import {
   X,
   Building,
   Cpu,
-  Server
+  Server,
+  PieChart,
+  Users,
+  Target,
+  AlertTriangle,
+  Layers,
+  GitBranch,
+  UserCheck,
+  RefreshCw
 } from 'lucide-react';
 
 interface QADashboardProps {
   onLogout: () => void;
 }
 
-type ActiveViewModule = 'allocation' | 'po_mapping' | 'vision_mission' | 'po_configure' | 'attainment_reports' | 'semester_reports';
+type ActiveViewModule = 'allocation' | 'po_mapping' | 'vision_mission' | 'po_configure' | 'attainment_reports' | 'semester_reports' | 'more_reports';
 
 const areRegNosEqual = (reg1: string | null | undefined, reg2: string | null | undefined): boolean => {
   if (!reg1 || !reg2) return false;
@@ -212,6 +220,17 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
   const [tempProgramMission, setTempProgramMission] = useState('');
   const [isEditingVmInline, setIsEditingVmInline] = useState<boolean>(false);
   const [isEditingPoInline, setIsEditingPoInline] = useState<boolean>(false);
+
+  // More Reports state
+  const [moreReportType, setMoreReportType] = useState<'ga_program' | 'ga_batch' | 'ga_semester' | 'clo_attainment' | 'po_attainment' | 'co_summary' | 'at_risk' | 'gap_analysis' | 'instructor_performance' | 'cohort_comparison'>('ga_program');
+  const [moreReportProgramId, setMoreReportProgramId] = useState<string>('');
+  const [moreReportBatch, setMoreReportBatch] = useState<string>('');
+  const [moreReportSemester, setMoreReportSemester] = useState<string>('');
+  const [moreReportCourseCode, setMoreReportCourseCode] = useState<string>('');
+  const [moreReportGaId, setMoreReportGaId] = useState<string>('');
+  const [moreReportData, setMoreReportData] = useState<any>(null);
+  const [moreReportLoading, setMoreReportLoading] = useState(false);
+  const [moreReportError, setMoreReportError] = useState<string | null>(null);
 
   // Dropdown states for Desktop-Style Menu Bar
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -1653,6 +1672,14 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                 </div>
               )}
             </div>
+
+            {/* MORE REPORTS NAV BUTTON */}
+            <button
+              onClick={() => { setActiveModule('more_reports'); setOpenMenu(null); }}
+              className={`px-3 py-1 text-xs font-sans font-semibold rounded cursor-pointer transition-all ${activeModule === 'more_reports' ? 'bg-indigo-900 text-white shadow-sm font-bold' : 'text-slate-700 hover:bg-slate-200 hover:text-slate-900'}`}
+            >
+              More Reports
+            </button>
 
             {/* ABOUT MENU */}
             <div className="relative">
@@ -3808,6 +3835,647 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
 
               </>
             )}
+
+            {/* ═══════════════════════════════════════════════════════════════
+                MORE REPORTS MODULE
+            ═══════════════════════════════════════════════════════════════ */}
+            {activeModule === 'more_reports' && (
+              <div className="space-y-6 max-w-7xl mx-auto animate-in duration-200 fade-in-25">
+
+                {/* Header */}
+                <div className="bg-gradient-to-br from-[#1e1b4b] to-[#312e81] rounded-3xl p-6 text-white shadow-md relative overflow-hidden">
+                  <div className="absolute right-0 top-0 bottom-0 opacity-10 select-none pointer-events-none flex items-center pr-10">
+                    <PieChart className="w-48 h-48 text-white" />
+                  </div>
+                  <div className="relative z-10 space-y-1">
+                    <span className="text-[10px] font-mono font-bold tracking-widest text-indigo-300 bg-indigo-500/20 border border-indigo-400/30 px-3 py-1 rounded-full uppercase">
+                      QA Analytics Suite
+                    </span>
+                    <h2 className="text-xl font-black mt-2">More Reports</h2>
+                    <p className="text-indigo-200 text-xs">Generate institutional reports for HEC compliance, accreditation, and academic quality assurance.</p>
+                  </div>
+                </div>
+
+                {/* Report Type Selector */}
+                <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
+                  <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Select Report Type</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                    {[
+                      { id: 'ga_program',            label: 'GA Attainment\nby Program',       icon: <Award className="w-5 h-5" />,          color: 'indigo' },
+                      { id: 'ga_batch',              label: 'GA Attainment\nby Batch',          icon: <Users className="w-5 h-5" />,          color: 'violet' },
+                      { id: 'ga_semester',           label: 'GA Attainment\nby Semester',       icon: <Layers className="w-5 h-5" />,         color: 'purple' },
+                      { id: 'clo_attainment',        label: 'CLO Attainment\nby Course',        icon: <Target className="w-5 h-5" />,         color: 'blue' },
+                      { id: 'co_summary',            label: 'CO Attainment\nSummary (HEC)',     icon: <FileText className="w-5 h-5" />,       color: 'sky' },
+                      { id: 'po_attainment',         label: 'PO Attainment\n(HEC Compliance)',  icon: <BarChart2 className="w-5 h-5" />,      color: 'teal' },
+                      { id: 'at_risk',               label: 'At-Risk\nStudents',                icon: <AlertTriangle className="w-5 h-5" />,  color: 'amber' },
+                      { id: 'gap_analysis',          label: 'Curriculum\nGap Analysis',         icon: <GitBranch className="w-5 h-5" />,      color: 'orange' },
+                      { id: 'instructor_performance',label: 'Instructor\nPerformance',          icon: <UserCheck className="w-5 h-5" />,      color: 'rose' },
+                      { id: 'cohort_comparison',     label: 'Cohort\nComparison',               icon: <TrendingUp className="w-5 h-5" />,     color: 'green' },
+                    ].map(rt => (
+                      <button
+                        key={rt.id}
+                        onClick={() => { setMoreReportType(rt.id as any); setMoreReportData(null); setMoreReportError(null); }}
+                        className={`flex flex-col items-center gap-2 p-3 rounded-2xl border-2 text-center transition-all text-xs font-bold whitespace-pre-line leading-tight
+                          ${moreReportType === rt.id
+                            ? 'border-indigo-600 bg-indigo-50 text-indigo-800 shadow-sm'
+                            : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50/50 hover:text-indigo-700'
+                          }`}
+                      >
+                        <span className={moreReportType === rt.id ? 'text-indigo-600' : 'text-slate-400'}>{rt.icon}</span>
+                        {rt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Filters Panel */}
+                <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
+                  <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Filters</h3>
+                  <div className="flex flex-wrap gap-4 items-end">
+
+                    {/* Program — needed for most reports */}
+                    {['ga_program','ga_semester','clo_attainment','co_summary','po_attainment','at_risk','gap_analysis','cohort_comparison'].includes(moreReportType) && (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Programme</label>
+                        <select
+                          value={moreReportProgramId}
+                          onChange={e => { setMoreReportProgramId(e.target.value); setMoreReportData(null); }}
+                          className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[160px]"
+                        >
+                          <option value="">— Select Programme —</option>
+                          {(data?.programs || []).filter(p => !activeDeptId || p.departmentId === activeDeptId).map(p => (
+                            <option key={p.id} value={p.id}>{p.name} ({p.code?.toUpperCase()})</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Batch */}
+                    {['ga_batch'].includes(moreReportType) && (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Batch</label>
+                        <select
+                          value={moreReportBatch}
+                          onChange={e => { setMoreReportBatch(e.target.value); setMoreReportData(null); }}
+                          className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[140px]"
+                        >
+                          <option value="">— Select Batch —</option>
+                          {Array.from(new Set(students.map((s: any) => {
+                            const m = String(s.regNo || '').match(/([a-zA-Z]{2}\d{2})/i);
+                            return m ? m[1].toUpperCase() : null;
+                          }).filter(Boolean))).sort().map(b => (
+                            <option key={b as string} value={(b as string).toLowerCase()}>{b as string}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Semester */}
+                    {['co_summary','at_risk'].includes(moreReportType) && (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Semester</label>
+                        <select
+                          value={moreReportSemester}
+                          onChange={e => { setMoreReportSemester(e.target.value); setMoreReportData(null); }}
+                          className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[130px]"
+                        >
+                          <option value="">All Semesters</option>
+                          {['1st','2nd','3rd','4th','5th','6th','7th','8th'].map(s => (
+                            <option key={s} value={s}>{s} Semester</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Course Code */}
+                    {['clo_attainment'].includes(moreReportType) && (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Course</label>
+                        <select
+                          value={moreReportCourseCode}
+                          onChange={e => { setMoreReportCourseCode(e.target.value); setMoreReportData(null); }}
+                          className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[180px]"
+                        >
+                          <option value="">— Select Course —</option>
+                          {(data?.courses || []).map((c: any) => (
+                            <option key={c.id} value={c.code}>{c.code} — {c.title}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Department for instructor performance */}
+                    {['instructor_performance'].includes(moreReportType) && (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Department</label>
+                        <select
+                          value={activeDeptId}
+                          disabled
+                          className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 min-w-[180px] opacity-70"
+                        >
+                          {(data?.departments || []).map((d: any) => (
+                            <option key={d.id} value={d.id}>{d.name}</option>
+                          ))}
+                        </select>
+                        <span className="text-[9px] text-slate-400">Using active department</span>
+                      </div>
+                    )}
+
+                    {/* GA ID for cohort comparison */}
+                    {['cohort_comparison'].includes(moreReportType) && (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Graduate Attribute (optional)</label>
+                        <select
+                          value={moreReportGaId}
+                          onChange={e => { setMoreReportGaId(e.target.value); setMoreReportData(null); }}
+                          className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[180px]"
+                        >
+                          <option value="">All GAs</option>
+                          {(data?.gas || []).filter((g: any) => !moreReportProgramId || g.programId === moreReportProgramId).map((g: any) => (
+                            <option key={g.id} value={g.id}>{g.id} — {g.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Generate Button */}
+                    <button
+                      onClick={async () => {
+                        setMoreReportData(null);
+                        setMoreReportError(null);
+                        setMoreReportLoading(true);
+                        try {
+                          let result: any = null;
+                          const BASE = (apiService as any).BASE_URL || '/api';
+
+                          const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('access') || ''}` };
+
+                          const get = async (url: string) => {
+                            const r = await fetch(url, { headers });
+                            if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
+                            return r.json();
+                          };
+
+                          if (moreReportType === 'ga_program') {
+                            if (!moreReportProgramId) throw new Error('Please select a programme.');
+                            result = await get(`/api/reports/program-ga-attainment/?programId=${encodeURIComponent(moreReportProgramId)}`);
+                          } else if (moreReportType === 'ga_batch') {
+                            if (!moreReportBatch) throw new Error('Please select a batch.');
+                            result = await get(`/api/reports/batch-ga-attainment/?batch=${encodeURIComponent(moreReportBatch)}&departmentId=${encodeURIComponent(activeDeptId)}`);
+                          } else if (moreReportType === 'ga_semester') {
+                            if (!moreReportProgramId) throw new Error('Please select a programme.');
+                            result = await get(`/api/reports/program-ga-attainment-by-semester/?programId=${encodeURIComponent(moreReportProgramId)}`);
+                          } else if (moreReportType === 'clo_attainment') {
+                            if (!moreReportCourseCode) throw new Error('Please select a course.');
+                            const params = new URLSearchParams({ courseCode: moreReportCourseCode });
+                            if (moreReportProgramId) params.set('programId', moreReportProgramId);
+                            result = await get(`/api/reports/course-attainment/?${params}`);
+                          } else if (moreReportType === 'co_summary') {
+                            if (!moreReportProgramId) throw new Error('Please select a programme.');
+                            const params = new URLSearchParams({ programId: moreReportProgramId });
+                            if (moreReportSemester) params.set('semester', moreReportSemester);
+                            result = await get(`/api/reports/co-attainment-summary/?${params}`);
+                          } else if (moreReportType === 'po_attainment') {
+                            if (!moreReportProgramId) throw new Error('Please select a programme.');
+                            result = await get(`/api/reports/po-attainment/?programId=${encodeURIComponent(moreReportProgramId)}`);
+                          } else if (moreReportType === 'at_risk') {
+                            if (!moreReportProgramId) throw new Error('Please select a programme.');
+                            const params = new URLSearchParams({ programId: moreReportProgramId });
+                            if (moreReportSemester) params.set('semester', moreReportSemester);
+                            result = await get(`/api/reports/at-risk-students/?${params}`);
+                          } else if (moreReportType === 'gap_analysis') {
+                            if (!moreReportProgramId) throw new Error('Please select a programme.');
+                            result = await get(`/api/reports/gap-analysis/?programId=${encodeURIComponent(moreReportProgramId)}`);
+                          } else if (moreReportType === 'instructor_performance') {
+                            if (!activeDeptId) throw new Error('No active department selected.');
+                            result = await get(`/api/reports/instructor-performance/?departmentId=${encodeURIComponent(activeDeptId)}`);
+                          } else if (moreReportType === 'cohort_comparison') {
+                            if (!moreReportProgramId) throw new Error('Please select a programme.');
+                            const params = new URLSearchParams({ programId: moreReportProgramId });
+                            if (moreReportGaId) params.set('gaId', moreReportGaId);
+                            result = await get(`/api/reports/cohort-comparison/?${params}`);
+                          }
+
+                          setMoreReportData(result);
+                        } catch (e: any) {
+                          setMoreReportError(e?.message || 'Failed to generate report.');
+                        } finally {
+                          setMoreReportLoading(false);
+                        }
+                      }}
+                      disabled={moreReportLoading}
+                      className="flex items-center gap-2 px-5 py-2 bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold rounded-xl shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {moreReportLoading
+                        ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Generating...</>
+                        : <><BarChart2 className="w-3.5 h-3.5" /> Generate Report</>
+                      }
+                    </button>
+                  </div>
+                </div>
+
+                {/* Error */}
+                {moreReportError && (
+                  <div className="bg-red-50 border border-red-200 rounded-2xl px-5 py-4 flex items-start gap-3">
+                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-bold text-red-700">Failed to generate report</p>
+                      <p className="text-xs text-red-600 mt-0.5">{moreReportError}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Results */}
+                {moreReportData && !moreReportLoading && (
+                  <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
+
+                    {/* Print button */}
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-indigo-600" />
+                        Report Results
+                      </h3>
+                      <button
+                        onClick={() => window.print()}
+                        className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all"
+                      >
+                        <Printer className="w-3.5 h-3.5" /> Print
+                      </button>
+                    </div>
+
+                    {/* GA Program / Batch / Semester attainment */}
+                    {(moreReportType === 'ga_program' || moreReportType === 'ga_batch') && moreReportData.attributes && (
+                      <div className="space-y-3">
+                        <div className="flex gap-3 flex-wrap text-xs">
+                          {moreReportData.programName && <span className="bg-indigo-100 text-indigo-800 font-bold px-3 py-1 rounded-full">{moreReportData.programName}</span>}
+                          {moreReportData.batch && <span className="bg-violet-100 text-violet-800 font-bold px-3 py-1 rounded-full">Batch: {moreReportData.batch?.toUpperCase()}</span>}
+                          {moreReportData.studentCount != null && <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{moreReportData.studentCount} Students</span>}
+                          <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">Threshold: {moreReportData.attainmentThreshold ?? 50}%</span>
+                        </div>
+                        <table className="w-full border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200">
+                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">GA</th>
+                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Title</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Attainment %</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Status</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Courses</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {moreReportData.attributes.map((ga: any, i: number) => (
+                              <tr key={ga.id || i} className="border-b border-slate-100 hover:bg-slate-50">
+                                <td className="px-3 py-2 font-black text-indigo-700">{ga.id}</td>
+                                <td className="px-3 py-2 text-slate-700">{ga.title}</td>
+                                <td className="px-3 py-2 text-center">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                      <div className={`h-full rounded-full ${(ga.averageAttainment ?? 0) >= 50 ? 'bg-green-500' : 'bg-red-400'}`} style={{ width: `${Math.min(100, ga.averageAttainment ?? 0)}%` }} />
+                                    </div>
+                                    <span className="font-bold text-slate-800">{(ga.averageAttainment ?? 0).toFixed(1)}%</span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${ga.attainmentStatus === 'Passed' || ga.attainmentStatus === 'Attained' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                    {ga.attainmentStatus ?? (ga.averageAttainment >= 50 ? 'Passed' : 'Audit Required')}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-center text-slate-500">{ga.contributingCoursesCount ?? ga.assessedCount ?? '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* GA by Semester */}
+                    {moreReportType === 'ga_semester' && moreReportData.semesters && (
+                      <div className="space-y-4">
+                        {moreReportData.semesters.map((sem: any, i: number) => (
+                          <div key={i} className="border border-slate-200 rounded-2xl overflow-hidden">
+                            <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
+                              <span className="text-xs font-black text-slate-700">{sem.semester} Semester</span>
+                            </div>
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b border-slate-100">
+                                  <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">GA</th>
+                                  <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Title</th>
+                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Attainment %</th>
+                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(sem.attributes || []).map((ga: any, j: number) => (
+                                  <tr key={j} className="border-b border-slate-50 hover:bg-slate-50">
+                                    <td className="px-3 py-2 font-bold text-indigo-700">{ga.id}</td>
+                                    <td className="px-3 py-2 text-slate-700">{ga.title}</td>
+                                    <td className="px-3 py-2 text-center font-bold">{(ga.averageAttainment ?? 0).toFixed(1)}%</td>
+                                    <td className="px-3 py-2 text-center">
+                                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${(ga.averageAttainment ?? 0) >= 50 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {(ga.averageAttainment ?? 0) >= 50 ? 'Passed' : 'Audit Required'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* CLO Attainment by Course */}
+                    {moreReportType === 'clo_attainment' && moreReportData.clos && (
+                      <div className="space-y-3">
+                        <div className="flex gap-3 flex-wrap text-xs">
+                          <span className="bg-blue-100 text-blue-800 font-bold px-3 py-1 rounded-full">{moreReportData.courseCode} — {moreReportData.courseTitle}</span>
+                          {moreReportData.classSize != null && <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{moreReportData.classSize} Students</span>}
+                          <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">Threshold: {moreReportData.attainmentThreshold ?? 50}%</span>
+                        </div>
+                        <table className="w-full border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200">
+                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">CLO</th>
+                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Description</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Mapped GA</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Attainment %</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Passed</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {moreReportData.clos.map((clo: any, i: number) => (
+                              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
+                                <td className="px-3 py-2 font-black text-blue-700">{clo.code}</td>
+                                <td className="px-3 py-2 text-slate-600">{clo.description}</td>
+                                <td className="px-3 py-2 text-center">
+                                  <span className="bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full text-[10px]">{clo.mappedGA || '—'}</span>
+                                </td>
+                                <td className="px-3 py-2 text-center font-bold">{(clo.attainmentPercentage ?? 0).toFixed(1)}%</td>
+                                <td className="px-3 py-2 text-center text-slate-500">{clo.passedCount ?? '—'} / {clo.totalCount ?? '—'}</td>
+                                <td className="px-3 py-2 text-center">
+                                  <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${(clo.attainmentPercentage ?? 0) >= 50 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                    {(clo.attainmentPercentage ?? 0) >= 50 ? 'Passed' : 'Needs Work'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* CO Attainment Summary */}
+                    {moreReportType === 'co_summary' && moreReportData.courses && (
+                      <div className="space-y-3">
+                        <div className="flex gap-3 flex-wrap text-xs">
+                          <span className="bg-sky-100 text-sky-800 font-bold px-3 py-1 rounded-full">{moreReportData.programId?.toUpperCase()}</span>
+                          {moreReportData.semester && <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{moreReportData.semester} Semester</span>}
+                        </div>
+                        {moreReportData.courses.map((course: any, i: number) => (
+                          <div key={i} className="border border-slate-200 rounded-2xl overflow-hidden">
+                            <div className="bg-slate-50 px-4 py-2 flex items-center gap-3 border-b border-slate-200">
+                              <span className="font-black text-xs text-slate-800">{course.courseCode}</span>
+                              <span className="text-xs text-slate-500">{course.courseTitle}</span>
+                            </div>
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b border-slate-100">
+                                  <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">CLO</th>
+                                  <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Description</th>
+                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Mapped GA</th>
+                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Attainment %</th>
+                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(course.clos || []).map((clo: any, j: number) => (
+                                  <tr key={j} className="border-b border-slate-50 hover:bg-slate-50">
+                                    <td className="px-3 py-2 font-bold text-sky-700">{clo.code}</td>
+                                    <td className="px-3 py-2 text-slate-600">{clo.description}</td>
+                                    <td className="px-3 py-2 text-center"><span className="bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full text-[10px]">{clo.mappedGA || '—'}</span></td>
+                                    <td className="px-3 py-2 text-center font-bold">{(clo.attainmentPercentage ?? 0).toFixed(1)}%</td>
+                                    <td className="px-3 py-2 text-center">
+                                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${(clo.attainmentPercentage ?? 0) >= 50 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {(clo.attainmentPercentage ?? 0) >= 50 ? 'Passed' : 'Audit Required'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* PO Attainment */}
+                    {moreReportType === 'po_attainment' && moreReportData.pos && (
+                      <div className="space-y-3">
+                        <div className="flex gap-3 flex-wrap text-xs">
+                          <span className="bg-teal-100 text-teal-800 font-bold px-3 py-1 rounded-full">{moreReportData.programName}</span>
+                          <span className="text-[10px] text-slate-400">HEC Program Outcome Compliance Report</span>
+                        </div>
+                        <table className="w-full border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200">
+                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">PO</th>
+                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Description</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Attainment %</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Status</th>
+                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Contributing GAs</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {moreReportData.pos.map((po: any, i: number) => (
+                              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 align-top">
+                                <td className="px-3 py-2 font-black text-teal-700">{po.id}</td>
+                                <td className="px-3 py-2 text-slate-600">{po.text}</td>
+                                <td className="px-3 py-2 text-center font-bold">{(po.attainmentPercent ?? 0).toFixed(1)}%</td>
+                                <td className="px-3 py-2 text-center">
+                                  <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${po.status === 'Met' ? 'bg-green-100 text-green-700' : po.status === 'Partially Met' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                                    {po.status}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <div className="flex flex-wrap gap-1">
+                                    {(po.contributingGAs || []).map((ga: any, j: number) => (
+                                      <span key={j} className="bg-indigo-50 text-indigo-700 font-bold text-[10px] px-2 py-0.5 rounded-full border border-indigo-200">
+                                        {ga.gaId} ({(ga.attainmentPercent ?? 0).toFixed(0)}%)
+                                      </span>
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* At-Risk Students */}
+                    {moreReportType === 'at_risk' && moreReportData.students && (
+                      <div className="space-y-3">
+                        <div className="flex gap-3 flex-wrap text-xs">
+                          <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">{moreReportData.totalAtRisk ?? moreReportData.students.length} At-Risk Students</span>
+                          <span className="text-[10px] text-slate-400">Students failing 2+ CLOs below {moreReportData.threshold ?? 50}%</span>
+                        </div>
+                        <table className="w-full border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200">
+                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Reg No</th>
+                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Name</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">CLOs Below Threshold</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Courses</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Avg Score</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {moreReportData.students.map((s: any, i: number) => (
+                              <tr key={i} className="border-b border-slate-100 hover:bg-amber-50">
+                                <td className="px-3 py-2 font-mono font-bold text-amber-700">{s.regNo}</td>
+                                <td className="px-3 py-2 font-bold text-slate-700">{s.name}</td>
+                                <td className="px-3 py-2 text-center">
+                                  <span className="bg-red-100 text-red-700 font-black px-2 py-0.5 rounded-full">{s.failingCLOsCount ?? s.weakCLOs?.length ?? '—'}</span>
+                                </td>
+                                <td className="px-3 py-2 text-center text-slate-500">{s.coursesAtRisk ?? s.affectedCourses ?? '—'}</td>
+                                <td className="px-3 py-2 text-center font-bold">{s.averageScore != null ? `${Number(s.averageScore).toFixed(1)}%` : '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Gap Analysis */}
+                    {moreReportType === 'gap_analysis' && moreReportData.gaps && (
+                      <div className="space-y-3">
+                        <p className="text-xs text-slate-500">GAs with zero or low course coverage — indicates curriculum gaps requiring attention.</p>
+                        <table className="w-full border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200">
+                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">GA</th>
+                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Name</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Mapped Courses</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Active CLOs</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Avg Attainment</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {moreReportData.gaps.map((g: any, i: number) => (
+                              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
+                                <td className="px-3 py-2 font-black text-orange-700">{g.gaId}</td>
+                                <td className="px-3 py-2 text-slate-700">{g.gaName}</td>
+                                <td className="px-3 py-2 text-center font-bold">{g.mappedCoursesCount ?? 0}</td>
+                                <td className="px-3 py-2 text-center font-bold">{g.activeCLOsCount ?? 0}</td>
+                                <td className="px-3 py-2 text-center font-bold">{g.avgAttainment != null ? `${Number(g.avgAttainment).toFixed(1)}%` : '—'}</td>
+                                <td className="px-3 py-2 text-center">
+                                  <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] 
+                                    ${g.status === 'No Coverage' ? 'bg-red-100 text-red-700' :
+                                      g.status === 'Partial Coverage' ? 'bg-amber-100 text-amber-700' :
+                                      'bg-green-100 text-green-700'}`}>
+                                    {g.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Instructor Performance */}
+                    {moreReportType === 'instructor_performance' && moreReportData.instructors && (
+                      <div className="space-y-3">
+                        <p className="text-xs text-slate-500">Instructors with courses below the {moreReportData.threshold ?? 50}% attainment threshold.</p>
+                        {moreReportData.instructors.map((inst: any, i: number) => (
+                          <div key={i} className="border border-slate-200 rounded-2xl overflow-hidden">
+                            <div className="bg-slate-50 px-4 py-2 flex items-center gap-3 border-b border-slate-200">
+                              <UserCheck className="w-3.5 h-3.5 text-rose-600" />
+                              <span className="font-black text-xs text-slate-800">{inst.name}</span>
+                              <span className="text-xs text-slate-400">{inst.employeeId}</span>
+                              <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${inst.coursesBelow > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                {inst.coursesBelow ?? 0} courses below threshold
+                              </span>
+                            </div>
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b border-slate-100">
+                                  <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Course</th>
+                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Avg Attainment</th>
+                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Students</th>
+                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(inst.courses || []).map((c: any, j: number) => (
+                                  <tr key={j} className="border-b border-slate-50 hover:bg-slate-50">
+                                    <td className="px-3 py-2 font-bold text-slate-700">{c.code} — {c.title}</td>
+                                    <td className="px-3 py-2 text-center font-bold">{c.avgAttainment != null ? `${Number(c.avgAttainment).toFixed(1)}%` : '—'}</td>
+                                    <td className="px-3 py-2 text-center text-slate-500">{c.studentCount ?? '—'}</td>
+                                    <td className="px-3 py-2 text-center">
+                                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${(c.avgAttainment ?? 0) >= 50 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {(c.avgAttainment ?? 0) >= 50 ? 'On Track' : 'Below Target'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Cohort Comparison */}
+                    {moreReportType === 'cohort_comparison' && moreReportData.cohorts && (
+                      <div className="space-y-3">
+                        <p className="text-xs text-slate-500">GA attainment trend across academic years / batches.</p>
+                        <table className="w-full border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200">
+                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Academic Year</th>
+                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">GA</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Attainment %</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Students Assessed</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Trend</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {moreReportData.cohorts.map((c: any, i: number) => (
+                              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
+                                <td className="px-3 py-2 font-bold text-green-700">{c.academicYear}</td>
+                                <td className="px-3 py-2 font-bold text-indigo-700">{c.gaId}</td>
+                                <td className="px-3 py-2 text-center font-bold">{Number(c.attainment ?? 0).toFixed(1)}%</td>
+                                <td className="px-3 py-2 text-center text-slate-500">{c.studentCount ?? '—'}</td>
+                                <td className="px-3 py-2 text-center">
+                                  {c.trend === 'up' && <TrendingUp className="w-4 h-4 text-green-500 mx-auto" />}
+                                  {c.trend === 'down' && <TrendingUp className="w-4 h-4 text-red-500 mx-auto rotate-180" />}
+                                  {(!c.trend || c.trend === 'stable') && <span className="text-slate-400 text-[10px]">—</span>}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Fallback for unexpected shapes */}
+                    {!['attributes','semesters','clos','courses','pos','students','gaps','instructors','cohorts'].some(k => moreReportData[k]) && (
+                      <pre className="text-[10px] text-slate-500 bg-slate-50 rounded-2xl p-4 overflow-auto max-h-96 whitespace-pre-wrap">
+                        {JSON.stringify(moreReportData, null, 2)}
+                      </pre>
+                    )}
+
+                  </div>
+                )}
+
+              </div>
+            )}
+
+            </div>
           </div>
         )}
 
