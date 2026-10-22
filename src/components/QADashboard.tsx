@@ -4476,7 +4476,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
             )}
 
             </div>
-          </div>
+          
         )}
 
       </main>
