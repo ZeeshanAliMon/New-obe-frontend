@@ -2312,12 +2312,45 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
       });
       
       if (programFiltered.length > 0) {
-        return programFiltered;
+        filtered = programFiltered;
       }
     }
-    
-    return filtered.length > 0 ? filtered : obeData.gas;
-  }, [obeData?.gas, selectedCourse]);
+
+    const programScoped = filtered.length > 0 ? filtered : obeData.gas;
+
+    // Narrow to the GAs that QA actually mapped to THIS course in the
+    // "Courses to GA mapping" screen. Without this the dropdown listed every
+    // GA in the program, letting a CLO be mapped to a GA the course doesn't
+    // even contribute to — which then feeds the attainment reports.
+    const courseCode = (selectedCourse.code || '').toLowerCase().trim();
+    const courseProg = (selectedCourse.programId || '').toLowerCase().trim();
+    const catalogCourses = obeData.courses || [];
+
+    // Same code can exist in several programs, so prefer an exact
+    // code+program match and fall back to code alone.
+    const catalogCourse =
+      catalogCourses.find(cc =>
+        (cc.code || '').toLowerCase().trim() === courseCode &&
+        (cc.programId || '').toLowerCase().trim() === courseProg
+      ) ||
+      catalogCourses.find(cc => (cc.code || '').toLowerCase().trim() === courseCode);
+
+    if (catalogCourse) {
+      const mappedIds = new Set(
+        (catalogCourse.mappedGAs || []).map(id => String(id).toLowerCase().trim())
+      );
+      // An empty mapping is meaningful: QA hasn't mapped this course to any GA
+      // yet, so there is genuinely nothing to choose from.
+      return obeData.gas
+        .filter(ga => mappedIds.has(String(ga.id).toLowerCase().trim()))
+        .sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true, sensitivity: 'base' }));
+    }
+
+    // Catalog entry couldn't be resolved (data still loading, or the course
+    // isn't in the catalog) — fall back to the program-scoped list rather than
+    // showing an empty dropdown.
+    return programScoped;
+  }, [obeData?.gas, obeData?.courses, selectedCourse]);
 
   const handleAssignCLOsCount = async (targetCount: number) => {
     if (!selectedCourse) return;
@@ -5211,6 +5244,11 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                                   {ga.id} - {ga.name}
                                 </option>
                               ))}
+                              {availableGAs.length === 0 && (
+                                <option value="" disabled className="text-slate-400 font-normal">
+                                  No GAs mapped to this course yet — ask QA to map it
+                                </option>
+                              )}
                             </select>
                           </div>
                         </div>
