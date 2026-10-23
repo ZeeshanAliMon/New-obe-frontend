@@ -4326,7 +4326,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                     {moreReportType === 'at_risk' && moreReportData.students && (
                       <div className="space-y-3">
                         <div className="flex gap-3 flex-wrap text-xs">
-                          <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">{moreReportData.totalAtRisk ?? moreReportData.students.length} At-Risk Students</span>
+                          <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">{moreReportData.atRiskCount ?? moreReportData.students.length} At-Risk Students</span>
                           <span className="text-[10px] text-slate-400">Students failing 2+ CLOs below {moreReportData.threshold ?? 50}%</span>
                         </div>
                         <table className="w-full border-collapse text-xs">
@@ -4336,7 +4336,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                               <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Name</th>
                               <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">CLOs Below Threshold</th>
                               <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Courses</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Avg Score</th>
+                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Avg Failed-CLO %</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -4345,10 +4345,10 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                                 <td className="px-3 py-2 font-mono font-bold text-amber-700">{s.regNo}</td>
                                 <td className="px-3 py-2 font-bold text-slate-700">{s.name}</td>
                                 <td className="px-3 py-2 text-center">
-                                  <span className="bg-red-100 text-red-700 font-black px-2 py-0.5 rounded-full">{s.failingCLOsCount ?? s.weakCLOs?.length ?? '—'}</span>
+                                  <span className="bg-red-100 text-red-700 font-black px-2 py-0.5 rounded-full">{(s.failedCLOs || []).length}</span>
                                 </td>
-                                <td className="px-3 py-2 text-center text-slate-500">{s.coursesAtRisk ?? s.affectedCourses ?? '—'}</td>
-                                <td className="px-3 py-2 text-center font-bold">{s.averageScore != null ? `${Number(s.averageScore).toFixed(1)}%` : '—'}</td>
+                                <td className="px-3 py-2 text-center text-slate-500">{Array.from(new Set((s.failedCLOs || []).map((f: any) => f.courseCode))).join(', ') || '—'}</td>
+                                <td className="px-3 py-2 text-center font-bold">{(s.failedCLOs || []).length ? `${((s.failedCLOs || []).reduce((a: number, f: any) => a + Number(f.attainment ?? 0), 0) / (s.failedCLOs || []).length).toFixed(1)}%` : '—'}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -4357,7 +4357,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                     )}
 
                     {/* Gap Analysis */}
-                    {moreReportType === 'gap_analysis' && moreReportData.gaps && (
+                    {moreReportType === 'gap_analysis' && moreReportData.attributes && (
                       <div className="space-y-3">
                         <p className="text-xs text-slate-500">GAs with zero or low course coverage — indicates curriculum gaps requiring attention.</p>
                         <table className="w-full border-collapse text-xs">
@@ -4372,7 +4372,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                             </tr>
                           </thead>
                           <tbody>
-                            {moreReportData.gaps.map((g: any, i: number) => (
+                            {moreReportData.attributes.map((g: any, i: number) => (
                               <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
                                 <td className="px-3 py-2 font-black text-orange-700">{g.gaId}</td>
                                 <td className="px-3 py-2 text-slate-700">{g.gaName}</td>
@@ -4382,7 +4382,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                                 <td className="px-3 py-2 text-center">
                                   <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] 
                                     ${g.status === 'No Coverage' ? 'bg-red-100 text-red-700' :
-                                      g.status === 'Partial Coverage' ? 'bg-amber-100 text-amber-700' :
+                                      (g.status === 'Partial Coverage' || g.status === 'Mapped but No CLOs' || g.status === 'Low Attainment') ? 'bg-amber-100 text-amber-700' :
                                       'bg-green-100 text-green-700'}`}>
                                     {g.status}
                                   </span>
@@ -4404,8 +4404,8 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                               <UserCheck className="w-3.5 h-3.5 text-rose-600" />
                               <span className="font-black text-xs text-slate-800">{inst.name}</span>
                               <span className="text-xs text-slate-400">{inst.employeeId}</span>
-                              <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${inst.coursesBelow > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                                {inst.coursesBelow ?? 0} courses below threshold
+                              <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${inst.coursesBelowThreshold > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                {inst.coursesBelowThreshold ?? 0} courses below threshold
                               </span>
                             </div>
                             <table className="w-full text-xs">
@@ -4413,19 +4413,19 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                                 <tr className="border-b border-slate-100">
                                   <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Course</th>
                                   <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Avg Attainment</th>
-                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Students</th>
+                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Semester</th>
                                   <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Status</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {(inst.courses || []).map((c: any, j: number) => (
                                   <tr key={j} className="border-b border-slate-50 hover:bg-slate-50">
-                                    <td className="px-3 py-2 font-bold text-slate-700">{c.code} — {c.title}</td>
-                                    <td className="px-3 py-2 text-center font-bold">{c.avgAttainment != null ? `${Number(c.avgAttainment).toFixed(1)}%` : '—'}</td>
-                                    <td className="px-3 py-2 text-center text-slate-500">{c.studentCount ?? '—'}</td>
+                                    <td className="px-3 py-2 font-bold text-slate-700">{c.courseCode} — {c.courseTitle}</td>
+                                    <td className="px-3 py-2 text-center font-bold">{c.avgCLOAttainment != null ? `${Number(c.avgCLOAttainment).toFixed(1)}%` : '—'}</td>
+                                    <td className="px-3 py-2 text-center text-slate-500">{c.semester ?? '—'}</td>
                                     <td className="px-3 py-2 text-center">
-                                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${(c.avgAttainment ?? 0) >= 50 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                        {(c.avgAttainment ?? 0) >= 50 ? 'On Track' : 'Below Target'}
+                                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${!c.belowThreshold ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {!c.belowThreshold ? 'On Track' : 'Below Target'}
                                       </span>
                                     </td>
                                   </tr>
@@ -4440,15 +4440,13 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                     {/* Cohort Comparison */}
                     {moreReportType === 'cohort_comparison' && moreReportData.cohorts && (
                       <div className="space-y-3">
-                        <p className="text-xs text-slate-500">GA attainment trend across academic years / batches.</p>
+                        <p className="text-xs text-slate-500">GA attainment across academic years / batches ({moreReportData.gaId || 'All GAs'}).</p>
                         <table className="w-full border-collapse text-xs">
                           <thead>
                             <tr className="bg-slate-50 border-b border-slate-200">
                               <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Academic Year</th>
                               <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">GA</th>
                               <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Attainment %</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Students Assessed</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Trend</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -4456,14 +4454,8 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                               <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
                                 <td className="px-3 py-2 font-bold text-green-700">{c.academicYear}</td>
                                 <td className="px-3 py-2 font-bold text-indigo-700">{c.gaId}</td>
-                                <td className="px-3 py-2 text-center font-bold">{Number(c.attainment ?? 0).toFixed(1)}%</td>
-                                <td className="px-3 py-2 text-center text-slate-500">{c.studentCount ?? '—'}</td>
-                                <td className="px-3 py-2 text-center">
-                                  {c.trend === 'up' && <TrendingUp className="w-4 h-4 text-green-500 mx-auto" />}
-                                  {c.trend === 'down' && <TrendingUp className="w-4 h-4 text-red-500 mx-auto rotate-180" />}
-                                  {(!c.trend || c.trend === 'stable') && <span className="text-slate-400 text-[10px]">—</span>}
-                                </td>
-                              </tr>
+                                <td className="px-3 py-2 text-center font-bold">{Number(c.attainmentPercent ?? 0).toFixed(1)}%</td>
+</tr>
                             ))}
                           </tbody>
                         </table>
@@ -4471,7 +4463,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                     )}
 
                     {/* Fallback for unexpected shapes */}
-                    {!['attributes','semesters','clos','courses','pos','students','gaps','instructors','cohorts'].some(k => moreReportData[k]) && (
+                    {!['attributes','semesters','clos','courses','pos','students','instructors','cohorts'].some(k => moreReportData[k]) && (
                       <pre className="text-[10px] text-slate-500 bg-slate-50 rounded-2xl p-4 overflow-auto max-h-96 whitespace-pre-wrap">
                         {JSON.stringify(moreReportData, null, 2)}
                       </pre>

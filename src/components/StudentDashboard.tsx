@@ -994,7 +994,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
 
           let studentCourses: any[] = [];
           try {
-            const fetched = await apiService.getStudentCourses(regToUse);
+            const fetched = await apiService.getStudentCourses();
             if (Array.isArray(fetched)) {
               studentCourses = [...fetched];
             }
