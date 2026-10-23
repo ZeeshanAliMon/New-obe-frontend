@@ -1008,9 +1008,12 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
     setData({ ...data, courses: updatedCourses });
 
     try {
-      await apiService.updateCourse(course.id, { mappedGAs: updatedMapped });
-    } catch (e) {
-      console.warn("Local storage fallback mapped.");
+      await apiService.updateCourse(course.id, { mappedGAs: updatedMapped, programId: course.programId });
+    } catch (e: any) {
+      // Revert optimistic update on failure
+      setData({ ...data, courses: data.courses });
+      console.error("Failed to save GA mapping:", e);
+      alert(`Failed to save mapping: ${e?.message || 'Server error. Please try again.'}`);
     }
   };
 

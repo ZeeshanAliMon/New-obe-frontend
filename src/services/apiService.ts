@@ -448,6 +448,7 @@ const mapCourseToBackend = (c: Course): any => {
     type: c.type === 'elective' ? 'elective' : 'core',
     mapped_gas: c.mappedGAs || [],
     mappedGAs: c.mappedGAs || [],
+    mappedGAs_write: c.mappedGAs || [],
     department_id: c.departmentId,
     departmentId: c.departmentId,
     department: c.departmentId,
@@ -601,7 +602,22 @@ export const apiService = {
 
   async updateCourse(id: string, data: Partial<Course>, programId?: string): Promise<Course> {
     const queryProg = programId || data.programId;
-    const mappedData = mapCourseToBackend({ ...data, id } as Course);
+
+    // For a partial update (e.g. only mappedGAs), avoid running the full
+    // mapCourseToBackend which would produce empty code/title fields from
+    // undefined properties and potentially corrupt the record.
+    // Instead, build a minimal payload with only the fields present in data.
+    let mappedData: any;
+    const isGAOnlyUpdate = Object.keys(data).every(k => ['mappedGAs', 'programId'].includes(k));
+    if (isGAOnlyUpdate && data.mappedGAs !== undefined) {
+      mappedData = {
+        mappedGAs: data.mappedGAs,
+        mappedGAs_write: data.mappedGAs,
+      };
+    } else {
+      mappedData = mapCourseToBackend({ ...data, id } as Course);
+    }
+
     let url = `${BASE_URL}/courses/${id}/`;
     if (queryProg) {
       const cleanProg = String(queryProg).trim();
