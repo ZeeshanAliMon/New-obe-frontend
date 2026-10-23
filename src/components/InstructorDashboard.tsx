@@ -2195,7 +2195,15 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
           });
         }
       }).catch(err => {
-        console.warn("[DEBUG auto-save useEffect] Failed to sync instructor courses to backend", err);
+        // This auto-save carries entered marks. Failing silently here meant an
+        // instructor could enter marks for an entire class, see no error, and
+        // lose all of it on logout — surface it so the change can be retried.
+        console.error("[auto-save] Failed to sync instructor courses to backend", err);
+        showNotification(
+          `Changes could NOT be saved to the server: ${err?.message || 'connection or server error'}. ` +
+          `Do not log out — please retry.`,
+          "error"
+        );
       });
     }
   }, [courses, loading]);

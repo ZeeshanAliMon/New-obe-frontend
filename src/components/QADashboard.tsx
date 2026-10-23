@@ -1010,10 +1010,14 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
     try {
       await apiService.updateCourse(course.id, { mappedGAs: updatedMapped, programId: course.programId });
     } catch (e: any) {
-      // Revert optimistic update on failure
+      // Roll the optimistic update back to the pre-click state and tell the user.
+      // Swallowing this is what made mappings look saved but vanish on logout.
       setData({ ...data, courses: data.courses });
       console.error("Failed to save GA mapping:", e);
-      alert(`Failed to save mapping: ${e?.message || 'Server error. Please try again.'}`);
+      showNotification(
+        `Could not save GA mapping for ${course.code}: ${e?.message || 'server error'}. Change was not saved.`,
+        "error"
+      );
     }
   };
 
@@ -1039,8 +1043,17 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
 
     try {
       await apiService.updateProgram(activeProgram.id, { pos: updatedPOs });
-    } catch (e) {
-      console.warn("Fallback DB save");
+    } catch (e: any) {
+      // Same failure mode as the course/GA toggle above: roll back the optimistic
+      // update and surface the error rather than leaving the UI showing a mapping
+      // that was never persisted.
+      setEditPOs(editPOs);
+      setData({ ...data, programs: data.programs });
+      console.error("Failed to save PO/GA mapping:", e);
+      showNotification(
+        `Could not save PO/GA mapping: ${e?.message || 'server error'}. Change was not saved.`,
+        "error"
+      );
     }
   };
 
