@@ -10,6 +10,7 @@ import ComingSoon from './components/ComingSoon';
 import Toast from './components/Toast';
 import { AnimatePresence, motion } from 'motion/react';
 import { apiService } from './services/apiService';
+import { clearSessionStorage } from './utils/session';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<{ type: UserType; name: string } | null>(null);
@@ -45,14 +46,9 @@ export default function App() {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem('access');
-    localStorage.removeItem('refresh');
-    localStorage.removeItem('IQRA_OBE_LOGGED_IN_USER');
-    localStorage.removeItem('IQRA_OBE_USER_DEPT_ID');
-    localStorage.removeItem('IQRA_OBE_USER_DEPT_NAME');
-    localStorage.removeItem('IQRA_OBE_INSTRUCTOR_ACTIVE_ID');
-    localStorage.removeItem('IQRA_OBE_DELETED_COURSES');
-    localStorage.removeItem('IQRA_OBE_FALLBACK_DB');
+    // Clears tokens and every IQRA_OBE_ key — see utils/session.ts for why a
+    // hand-maintained list here was leaking the previous user's data.
+    clearSessionStorage();
     setCurrentUser(null);
   };
 

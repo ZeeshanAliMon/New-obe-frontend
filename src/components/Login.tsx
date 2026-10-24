@@ -4,6 +4,7 @@ import { UserType } from '../types';
 import { GraduationCap, BookOpen, ShieldCheck } from 'lucide-react';
 import { BASE_URL } from '../services/apiService';
 import { DEFAULT_TEMP_PASSWORD } from '../utils/config';
+import { clearSessionStorage } from '../utils/session';
 
 interface LoginProps {
   onLogin: (userType: UserType, name: string) => void;
@@ -82,6 +83,10 @@ export default function Login({ onLogin }: LoginProps) {
       // Save tokens
       // SECURITY NOTE: Storing JWT tokens in localStorage is susceptible to XSS.
       // For production hardening, transition to using secure, httpOnly cookies set by the backend.
+      // Start from a clean slate. If the previous user closed the tab without
+      // logging out, their courses/rosters/marks would otherwise still be in
+      // storage underneath this new session.
+      clearSessionStorage();
       localStorage.setItem('access',  data.access);
       localStorage.setItem('refresh', data.refresh);
 
