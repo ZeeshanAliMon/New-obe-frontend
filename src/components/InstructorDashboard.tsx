@@ -2585,13 +2585,22 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
       return;
     }
     if (selectedCourse) {
-      if (selectedCourse.programName) {
-        setReportSession(`B.Sc ${selectedCourse.programName} (Fall-Morning)`);
-      } else if (selectedCourse.departmentName) {
-        setReportSession(`B.Sc ${selectedCourse.departmentName} (Fall-Morning)`);
-      } else {
-        setReportSession('B.Sc Electrical Engineering (Fall-Morning)');
-      }
+      // The heading used to be `B.Sc ${programName} (Fall-Morning)`. The program
+      // name from the API already carries its degree ("BS Computer Science
+      // (BSCS)"), so sheets read "B.Sc BS Computer Science"; "Fall" was
+      // hardcoded even on Spring courses; and with no program it fell back to
+      // "B.Sc Electrical Engineering" for every department.
+      //
+      // Now: the program (or department) name as-is, and the season taken from
+      // the course's own term (e.g. "Spring-2023" -> "Spring"). The shift isn't
+      // stored anywhere, so "Morning" stays as the editable default.
+      const base = (selectedCourse.programName || selectedCourse.departmentName || '').trim();
+      const seasonMatch = String(selectedCourse.academicYear || '').match(/spring|summer|fall|autumn|winter/i);
+      const season = seasonMatch
+        ? seasonMatch[0].charAt(0).toUpperCase() + seasonMatch[0].slice(1).toLowerCase()
+        : '';
+      const shift = season ? `${season}-Morning` : 'Morning';
+      setReportSession(base ? `${base} (${shift})` : `(${shift})`);
       setReportInstructor(instructorName);
       const today = new Date();
       setReportDated(today.toISOString().split('T')[0]);
@@ -8677,7 +8686,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                         value={reportSession}
                         onChange={(e) => setReportSession(e.target.value)}
                         className="w-full text-xs bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-lg p-2 text-slate-950 font-sans font-medium focus:ring-2 focus:ring-blue-100 outline-none transition-all"
-                        placeholder="B.Sc Electrical Engineering (Fall-Morning)"
+                        placeholder="BS Computer Science (BSCS) (Fall-Morning)"
                       />
                     </div>
 
