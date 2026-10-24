@@ -930,7 +930,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
           if (Array.isArray(parsed)) {
             activeBindings = parsed;
           }
-        } catch (e) {}
+        } catch (e) { console.warn('Stored student bindings are unreadable', e); }
       }
       setStudentBindings(activeBindings);
 
@@ -948,7 +948,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
               if (role && role !== 'student') {
                 isStudentUser = false;
               }
-            } catch (e) {}
+            } catch (e) { console.warn('Stored user record is unreadable', e); }
           }
 
           // Load local instructor courses cache first
@@ -971,7 +971,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                 });
               }
             }
-          } catch (e) {}
+          } catch (e) { console.warn('Could not read cached instructor courses', e); }
 
           // Attempt to fetch instructor courses from server if available
           if (!isStudentUser) {

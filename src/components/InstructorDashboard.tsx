@@ -1993,7 +1993,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
           try {
             const direct = await apiService.getDepartments();
             if (direct && direct.length > 0) depts = direct;
-          } catch (e) {}
+          } catch (e) { console.warn('Department list fallback fetch failed', e); }
         }
         if (depts.length === 0) {
           const storedDept = localStorage.getItem('IQRA_OBE_USER_DEPT_ID');
@@ -2026,7 +2026,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
         try {
           const direct = await apiService.getDepartments();
           if (direct && direct.length > 0) fallbackDepts = direct;
-        } catch (e) {}
+        } catch (e) { console.warn('Department list fallback fetch failed', e); }
         if (fallbackDepts.length === 0) {
           const storedDept = localStorage.getItem('IQRA_OBE_USER_DEPT_ID');
           const storedDeptName = localStorage.getItem('IQRA_OBE_USER_DEPT_NAME');
@@ -5147,7 +5147,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                               updatedICs.push({ ...selectedCourse, students: updatedStudents });
                             }
                             localStorage.setItem('IQRA_OBE_INSTRUCTOR_COURSES', JSON.stringify(updatedICs));
-                          } catch (e) {}
+                          } catch (e) { console.warn('Could not update local instructor-course cache', e); }
 
                           // Also record in student bindings so Student Dashboard picks it up immediately
                           try {
@@ -5158,7 +5158,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                               currentBindings.push({ studentRegNo: cleanReg, courseCode: selectedCourse.code });
                               localStorage.setItem('IQRA_OBE_STUDENT_BINDINGS', JSON.stringify(currentBindings));
                             }
-                          } catch (e) {}
+                          } catch (e) { console.warn('Could not update local student bindings', e); }
 
                           // Persist to the server. This used to call the dept-admin
                           // full-sync endpoint, which always 403s for instructors;

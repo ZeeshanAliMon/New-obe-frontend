@@ -96,13 +96,20 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutM
   // Security Interceptor: Block authenticated requests if the user must change their default password
   const savedUserStr = localStorage.getItem('IQRA_OBE_LOGGED_IN_USER');
   if (savedUserStr) {
+    // Only the JSON parse belongs in the try. The deliberate throw below used to
+    // sit inside the same try with an empty catch, which swallowed it — so the
+    // request went out anyway and this guard never blocked anything.
+    let mustChangePassword = false;
     try {
       const user = JSON.parse(savedUserStr);
-      if (user && user.mustChangePassword && !url.includes('/auth/change-password') && !url.includes('/auth/login') && !url.includes('/auth/token/refresh')) {
-        window.dispatchEvent(new CustomEvent('session-expired'));
-        throw new Error('You must change your default password before accessing any application features.');
-      }
-    } catch (e) {}
+      mustChangePassword = !!(user && user.mustChangePassword);
+    } catch (e) {
+      console.warn('Stored user record is unreadable; skipping password-change check', e);
+    }
+    if (mustChangePassword && !url.includes('/auth/change-password') && !url.includes('/auth/login') && !url.includes('/auth/token/refresh')) {
+      window.dispatchEvent(new CustomEvent('session-expired'));
+      throw new Error('You must change your default password before accessing any application features.');
+    }
   }
 
   const makeRequest = async (tokenOverride?: string) => {
@@ -180,11 +187,11 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutM
             const user = JSON.parse(savedUserStr);
             user.mustChangePassword = true;
             localStorage.setItem('IQRA_OBE_LOGGED_IN_USER', JSON.stringify(user));
-          } catch (e) {}
+          } catch (e) { console.warn('Could not flag stored user for password change', e); }
         }
         window.dispatchEvent(new CustomEvent('session-expired', { detail: { isPasswordReset: true } }));
       }
-    } catch (e) {}
+    } catch (e) { /* 403 body was not JSON — not a password-change response, nothing to do */ }
   }
 
   // If STILL unauthorized (401), trigger session expiration to alert user and logout gracefully
@@ -1052,7 +1059,7 @@ export const apiService = {
       } else {
         const errorText = await response.text();
         let parsed;
-        try { parsed = JSON.parse(errorText); } catch (e) {}
+        try { parsed = JSON.parse(errorText); } catch (e) { /* error body was not JSON; the raw text is used below */ }
         throw new Error(parsed?.message || parsed?.error || `Server error (${response.status}): ${errorText}`);
       }
     } catch (err: any) {
@@ -1083,7 +1090,7 @@ export const apiService = {
       if (!response.ok) {
         const errorText = await response.text();
         let parsed;
-        try { parsed = JSON.parse(errorText); } catch (e) {}
+        try { parsed = JSON.parse(errorText); } catch (e) { /* error body was not JSON; the raw text is used below */ }
         throw new Error(parsed?.message || parsed?.error || `Server error (${response.status}): ${errorText}`);
       }
 
@@ -1100,7 +1107,7 @@ export const apiService = {
             const filtered = parsed.filter((b: any) => b.studentRegNo.toLowerCase() !== regNo.toLowerCase());
             localStorage.setItem('IQRA_OBE_STUDENT_BINDINGS', JSON.stringify(filtered));
           }
-        } catch (e) {}
+        } catch (e) { console.warn('Could not clean up local student bindings', e); }
       }
 
       const savedStatuses = localStorage.getItem('IQRA_OBE_STUDENT_COURSE_STATUSES');
@@ -1109,7 +1116,7 @@ export const apiService = {
           const parsed = JSON.parse(savedStatuses);
           delete parsed[regNo];
           localStorage.setItem('IQRA_OBE_STUDENT_COURSE_STATUSES', JSON.stringify(parsed));
-        } catch (e) {}
+        } catch (e) { console.warn('Could not clean up local student course statuses', e); }
       }
 
       return true;
@@ -1127,7 +1134,7 @@ export const apiService = {
             const filtered = parsed.filter((b: any) => b.studentRegNo.toLowerCase() !== regNo.toLowerCase());
             localStorage.setItem('IQRA_OBE_STUDENT_BINDINGS', JSON.stringify(filtered));
           }
-        } catch (e) {}
+        } catch (e) { console.warn('Could not clean up local student bindings', e); }
       }
       return true;
     }
