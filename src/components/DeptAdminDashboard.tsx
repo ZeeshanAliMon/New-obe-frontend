@@ -8,7 +8,8 @@ import {
   GraduationCap, 
   Plus, 
   Check, 
-  FileSpreadsheet, 
+  FileSpreadsheet,
+  Upload, 
   Search, 
   RefreshCw, 
   Link, 
@@ -2529,58 +2530,54 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
                 </form>
               </div>
 
-              {/* IMPORT EXCEL CONTAINER */}
-              <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-800">Import Courses in Bulk</h3>
-                    <p className="text-[11px] text-slate-500">Upload standard Excel files to speed up onboarding catalogs.</p>
+              {/* IMPORT EXCEL — one compact row (was a tall card with a big drop zone) */}
+              <div className="bg-white border border-slate-200/80 rounded-2xl px-5 py-4 shadow-sm">
+                <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-5">
+                  <div className="flex items-center gap-3 lg:w-64 shrink-0">
+                    <div className="p-2 bg-indigo-50 rounded-xl border border-indigo-100">
+                      <FileSpreadsheet className="h-5 w-5 text-indigo-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-800">Import Courses in Bulk</h3>
+                      <p className="text-[11px] text-slate-500">Upload an Excel sheet (.xlsx, .xls)</p>
+                    </div>
                   </div>
-                  <button 
-                    onClick={downloadExcelTemplate}
-                    className="flex items-center gap-1.5 border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-xl text-[10px] font-bold text-slate-600 transition-all shadow-sm cursor-pointer"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    <span>Download Excel Template</span>
-                  </button>
-                </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
-                  <div className="lg:col-span-2 border-2 border-dashed border-slate-200 hover:border-indigo-400 p-5 rounded-2xl bg-slate-50/50 hover:bg-indigo-50/5 text-center transition-all relative">
-                    <input 
-                      type="file" 
+                  <label className="flex-1 relative flex items-center justify-center gap-2 border border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/30 rounded-xl px-4 py-2.5 text-xs font-semibold text-slate-600 transition-all cursor-pointer">
+                    <input
+                      type="file"
                       accept=".xlsx, .xls"
                       onChange={handleImportCoursesExcel}
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />
-                    <FileSpreadsheet className="mx-auto h-8 w-auto text-slate-400 mb-2" />
-                    <p className="text-xs font-bold text-slate-700">Drag & drop your Excel sheet here, or click to browse</p>
-                    <p className="text-[10px] text-slate-400 mt-1">Supports XLSX, XLS files with standardized column headers</p>
-                  </div>
+                    <Upload className="h-4 w-4 text-slate-400" />
+                    <span>Drop Excel file here or <span className="text-indigo-600 underline">browse</span></span>
+                  </label>
 
-                  <div className="bg-slate-50 p-4 border border-slate-200 rounded-2xl h-full flex flex-col justify-center">
-                    <h4 className="text-xs font-bold text-slate-700 mb-2">Import Verification</h4>
-                    {importStatus.type === 'idle' ? (
-                      <p className="text-[11px] text-slate-500 italic">No files selected. Uploading will automatically parse and display skipped counts.</p>
-                    ) : importStatus.type === 'success' ? (
-                      <div className="space-y-1">
-                        <p className="text-[11px] text-blue-600 font-bold flex items-center gap-1.5">
-                          <Check className="h-4.5 w-4.5" />
-                          <span>Parsing Successful!</span>
-                        </p>
-                        <p className="text-[11px] text-slate-600 leading-relaxed">{importStatus.message}</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-1">
-                        <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1.5">
-                          <AlertCircle className="h-4.5 w-4.5" />
-                          <span>Parsing Failed</span>
-                        </p>
-                        <p className="text-[11px] text-slate-600 leading-relaxed">{importStatus.message}</p>
-                      </div>
-                    )}
-                  </div>
+                  <button
+                    onClick={downloadExcelTemplate}
+                    className="flex items-center justify-center gap-1.5 border border-slate-200 hover:bg-slate-50 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-600 transition-all cursor-pointer shrink-0"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Download Template</span>
+                  </button>
                 </div>
+
+                {importStatus.type !== 'idle' && (
+                  <div className={`mt-3 flex items-start gap-2 rounded-xl px-3.5 py-2.5 text-xs border ${
+                    importStatus.type === 'success'
+                      ? 'bg-blue-50 border-blue-100 text-blue-800'
+                      : 'bg-rose-50 border-rose-100 text-rose-800'
+                  }`}>
+                    {importStatus.type === 'success'
+                      ? <Check className="h-4 w-4 mt-0.5 shrink-0" />
+                      : <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+                    <p className="leading-relaxed">
+                      <span className="font-bold">{importStatus.type === 'success' ? 'Import successful. ' : 'Import failed. '}</span>
+                      {importStatus.message}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* COURSE LISTING TABLE */}
