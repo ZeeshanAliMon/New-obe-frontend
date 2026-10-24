@@ -47,7 +47,7 @@ import { Course, Department, Program, MarksCategory, UnitItem, UnitQuestion, Cou
 import MarksEntrySpreadsheet from './MarksEntrySpreadsheet';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
-import { toPng } from 'html-to-image';
+import { toJpeg } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 
 const areRegNosEqual = (reg1: string | null | undefined, reg2: string | null | undefined): boolean => {
@@ -1136,9 +1136,34 @@ const MarksheetDocument = ({
         @media print {
           @page {
             size: ${isLandscapeReport ? 'landscape' : 'portrait'};
-            margin: 10mm;
+            /* margin: 0 leaves the browser nowhere to draw its own header and
+               footer, which is what was stamping the page URL
+               ("localhost:3000/?print=true&courseId=...") and the "1/3" page
+               counter onto every sheet. The page's own breathing room is
+               restored via padding on the document below. */
+            margin: 0;
+          }
+          #marksheet-real-view {
+            padding: 10mm !important;
           }
           .no-print-break {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          /* The student ledger is taller than one page on any real class, so it
+             must be allowed to flow across pages. It previously sat inside a
+             .no-print-break wrapper, and "break-inside: avoid" pushed the whole
+             table to page 2 — which is why page 1 came out almost blank. Let the
+             table break, repeat its header row on each page, and only keep
+             individual rows from being split down the middle. */
+          .print-allow-break {
+            page-break-inside: auto !important;
+            break-inside: auto !important;
+          }
+          thead {
+            display: table-header-group;
+          }
+          tbody tr {
             page-break-inside: avoid;
             break-inside: avoid;
           }
@@ -1225,7 +1250,7 @@ const MarksheetDocument = ({
       </div>
 
       {/* Students Graded Marks Ledger Table */}
-      <div className="mt-4 no-print-break font-sans">
+      <div className="mt-4 print-allow-break font-sans">
         <div className="overflow-x-auto">
           {reportType === 'award' ? (
             <>
@@ -2592,39 +2617,25 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
   const handlePrintDirect = () => {
     if (!selectedCourse) return;
 
-    // Construct query parameters
-    const params = new URLSearchParams();
-    params.set('print', 'true');
-    params.set('courseId', selectedCourse.id);
-    params.set('reportType', reportType);
-    params.set('campus', reportCampus);
-    params.set('semester', reportSemester);
-    params.set('section', reportSection);
-    params.set('offeredIn', reportOfferedIn);
-    params.set('session', reportSession);
-    params.set('instructor', reportInstructor);
-    params.set('dated', reportDated);
-    params.set('printDate', reportPrintDate);
+    // Print in place. This used to window.open() a dedicated ?print=true page
+    // in a new tab, which meant a stray tab on every print and a browser-drawn
+    // header/footer carrying that long query string across the top of the
+    // output. The in-app print view renders the same document, so switch to it
+    // directly and let the browser print this page.
+    setIsDirectPrinting(true);
 
-    const url = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
-
-    // Open in a new tab to bypass iframe sandboxing and guarantee perfect printable aspect ratio
-    const printTab = window.open(url, '_blank');
-    if (printTab) {
-      showNotification("Opening dedicated print page in a new tab to bypass browser sandboxing...", "info");
-    } else {
-      // If popup blocker blocked it, fallback to showing in-app print view and attempt print
-      setIsDirectPrinting(true);
-      showNotification("Popup blocked! Opening print view in dashboard. For best results, allow popups or open the app in a new tab first.", "info");
-      setTimeout(() => {
-        try {
-          window.focus();
-          window.print();
-        } catch (e) {
-          console.error("Print failed:", e);
-        }
-      }, 500);
-    }
+    // Let React commit the print view before handing off to the browser.
+    setTimeout(() => {
+      try {
+        window.focus();
+        window.print();
+      } catch (e) {
+        console.error("Print failed:", e);
+      } finally {
+        // Return to the report builder once the print dialog is dismissed.
+        setIsDirectPrinting(false);
+      }
+    }, 350);
   };
 
   const handleDownloadPDF = async () => {
@@ -2742,17 +2753,29 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
       // Yield a tiny execution macrotask to allow Chrome rendering thread to flush computed coordinates
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Capture high-resolution image representation of the fully expanded layout
-      const dataUrl = await toPng(element, {
-        quality: 1.0,
-        pixelRatio: 2.5, // captures ultra sharp vector text and values
+      // Capture the fully expanded layout.
+      //
+      // This was a lossless PNG at pixelRatio 2.5, which produced ~37MB files.
+      // A mark sheet is black text on white — JPEG compresses that to a few
+      // percent of the PNG size with no visible difference at print DPI, and
+      // 2x is still ~190 DPI on A4, well above what the text needs.
+      const dataUrl = await toJpeg(element, {
+        quality: 0.92,
+        pixelRatio: 2,
         backgroundColor: '#ffffff'
       });
 
-      const pdf = new jsPDF(isLandscape ? 'l' : 'p', 'mm', 'a4');
+      // compress: true runs the PDF's own Flate compression over the object
+      // streams on top of the JPEG.
+      const pdf = new jsPDF({
+        orientation: isLandscape ? 'l' : 'p',
+        unit: 'mm',
+        format: 'a4',
+        compress: true,
+      });
       const pageHeight = isLandscape ? 210 : 297; // A4 height in mm
       const imgWidth = isLandscape ? 297 : 210; // A4 width in mm
-      
+
       const widthInPx = element.offsetWidth || renderWidth;
       const heightInPx = element.offsetHeight || (isLandscape ? 800 : 1130);
       const imgHeight = (heightInPx * imgWidth) / widthInPx; // scales naturally to preserve original aspect ratio
@@ -2760,8 +2783,14 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
       let heightLeft = imgHeight;
       let position = 0;
 
+      // Multi-page output works by placing the SAME tall image at a negative
+      // offset on each page. Passing a stable alias makes jsPDF store the image
+      // once and reference it from every page — without it the whole capture was
+      // embedded again per page, so a 3-page sheet carried 3 copies.
+      const IMG_ALIAS = 'marksheet-capture';
+
       // Add Page 1
-      pdf.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight);
+      pdf.addImage(dataUrl, 'JPEG', 0, position, imgWidth, imgHeight, IMG_ALIAS, 'FAST');
       heightLeft -= pageHeight;
 
       // Slice overflow contents onto successive pages natively
@@ -2769,7 +2798,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
       while (heightLeft > 5) {
         position = - (pageNum * pageHeight);
         pdf.addPage();
-        pdf.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight);
+        pdf.addImage(dataUrl, 'JPEG', 0, position, imgWidth, imgHeight, IMG_ALIAS, 'FAST');
         heightLeft -= pageHeight;
         pageNum++;
       }
