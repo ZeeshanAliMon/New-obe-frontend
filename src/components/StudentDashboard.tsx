@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { toCanvas } from 'html-to-image';
-import { jsPDF } from 'jspdf';
+import { exportElementToPdf } from '../utils/pdfExport';
 import { 
   GraduationCap, 
   BookOpen, 
@@ -796,8 +795,6 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
   const [showSealedRecord, setShowSealedRecord] = useState<boolean>(false);
   const [cloFilterCourseCode, setCloFilterCourseCode] = useState<string>('all');
   const [selectedSemester, setSelectedSemester] = useState<string>('all');
-  const [selectedCloCourseCode, setSelectedCloCourseCode] = useState<string | null>(null);
-  const [selectedGaCourseCode, setSelectedGaCourseCode] = useState<string | null>(null);
 
   // Print & Download Transcript States
   const [isPrintingTranscript, setIsPrintingTranscript] = useState(false);
@@ -843,8 +840,8 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
   useEffect(() => {
     if (!activeRegNo) return;
     
-    setSelectedCloCourseCode(null);
-    setSelectedGaCourseCode(null);
+    setOpenCloCourses({});
+    setOpenGaCourses({});
     
     const fetchReports = async () => {
       try {
@@ -1818,14 +1815,6 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
     return prog ? formatDegreeTitle(prog.name) : '';
   }, [activeProgram, enrolledCoursesWithGrades, programs]);
 
-  // The CLO and GA tabs open on a course straight away (chosen from a
-  // dropdown) instead of a grid of course cards, so keep a valid selection.
-  useEffect(() => {
-    if (enrolledCoursesWithGrades.length === 0) return;
-    const codes = enrolledCoursesWithGrades.map(c => c.code);
-    if (!selectedCloCourseCode || !codes.includes(selectedCloCourseCode)) setSelectedCloCourseCode(codes[0]);
-    if (!selectedGaCourseCode || !codes.includes(selectedGaCourseCode)) setSelectedGaCourseCode(codes[0]);
-  }, [enrolledCoursesWithGrades, selectedCloCourseCode, selectedGaCourseCode]);
 
   // Group enrolled courses by Semester
   const coursesBySemester = useMemo(() => {
@@ -2084,93 +2073,9 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
       downloadBtn.disabled = true;
     }
 
-    // Save the inline styles we touch so the on-screen preview is restored exactly.
-    const touched = ['width', 'max-width', 'min-height', 'box-shadow', 'border', 'border-radius', 'padding', 'margin'];
-    const saved = touched.map(prop => [prop, element.style.getPropertyValue(prop), element.style.getPropertyPriority(prop)] as const);
-
     try {
-      // Lay the transcript out at A4-ish width, without the preview's card chrome
-      // or its forced full-page height. Page margins are added in the PDF itself.
-      element.style.setProperty('width', '800px', 'important');
-      element.style.setProperty('max-width', 'none', 'important');
-      element.style.setProperty('min-height', '0', 'important');
-      element.style.setProperty('box-shadow', 'none', 'important');
-      element.style.setProperty('border', 'none', 'important');
-      element.style.setProperty('border-radius', '0px', 'important');
-      element.style.setProperty('padding', '0px', 'important');
-      // The preview centres the sheet with mx-auto. The capture copies COMPUTED
-      // styles, so that centring margin (e.g. 85px) was baked into the image,
-      // pushing the content right and cutting off its right edge.
-      element.style.setProperty('margin', '0px', 'important');
-      void element.offsetHeight;
-      await new Promise(resolve => setTimeout(resolve, 150));
-
-      // FLEXIBLE WIDTH. This used to capture exactly 800px, so anything wider
-      // (a long department or course name) was cut off at the right edge. If the
-      // content needs more room, render wider; it is scaled to fit the page.
-      const renderWidth = Math.max(800, Math.ceil(element.scrollWidth));
-      if (renderWidth > 800) {
-        element.style.setProperty('width', `${renderWidth}px`, 'important');
-        void element.offsetHeight;
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-      const totalHeight = Math.ceil(element.scrollHeight);
-
-      // Safe places to start a new page: the bottom of every table row and of
-      // each top-level block. Pages used to be cut at fixed heights, which could
-      // slice a row of text in half across two pages.
-      const originTop = element.getBoundingClientRect().top;
-      const breakPoints = Array.from(element.querySelectorAll('tr, :scope > *'))
-        .map(el => Math.round((el as HTMLElement).getBoundingClientRect().bottom - originTop))
-        .filter(y => y > 0 && y < totalHeight)
-        .sort((x, y) => x - y);
-
-      const PIXEL_RATIO = 2;
-      const canvas = await toCanvas(element, {
-        pixelRatio: PIXEL_RATIO,
-        backgroundColor: '#ffffff',
-        width: renderWidth,
-        height: totalHeight,
-      });
-
-      // A4 portrait with 12mm margins on every page. JPEG + compression instead
-      // of a lossless PNG keeps the file small (the PNG approach produced files
-      // tens of MB in size for the mark sheet).
-      const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true });
-      const MARGIN = 12;
-      const contentWmm = 210 - MARGIN * 2;
-      const contentHmm = 297 - MARGIN * 2;
-      const pxPerMm = renderWidth / contentWmm;          // layout px per mm on paper
-      const pageHeightPx = Math.floor(contentHmm * pxPerMm);
-
-      let y = 0;
-      let first = true;
-      while (y < totalHeight - 1) {
-        let end = Math.min(y + pageHeightPx, totalHeight);
-        if (end < totalHeight) {
-          // Pull the break up to the last row/block boundary that still fits,
-          // as long as that leaves a reasonably full page.
-          const candidates = breakPoints.filter(bp => bp > y + pageHeightPx * 0.4 && bp <= end);
-          if (candidates.length) end = candidates[candidates.length - 1];
-        }
-        const sliceHeight = end - y;
-
-        const pageCanvas = document.createElement('canvas');
-        pageCanvas.width = canvas.width;
-        pageCanvas.height = Math.ceil(sliceHeight * PIXEL_RATIO);
-        const ctx = pageCanvas.getContext('2d');
-        if (!ctx) throw new Error('Canvas 2D context unavailable');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-        ctx.drawImage(canvas, 0, Math.floor(y * PIXEL_RATIO), canvas.width, pageCanvas.height, 0, 0, canvas.width, pageCanvas.height);
-
-        if (!first) pdf.addPage();
-        first = false;
-        pdf.addImage(pageCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', MARGIN, MARGIN, contentWmm, sliceHeight / pxPerMm, undefined, 'FAST');
-        y = end;
-      }
-
-      pdf.save(`Unofficial_Academic_Transcript_${activeStudent?.regNo || 'Student'}.pdf`);
+      // Shared with the CLO / GA attainment reports (utils/pdfExport.ts).
+      await exportElementToPdf(element, `Unofficial_Academic_Transcript_${activeStudent?.regNo || 'Student'}.pdf`);
     } catch (error) {
       console.error("PDF download compilation error:", error);
       // Fallback to native print
@@ -2181,11 +2086,6 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
         downloadBtn.disabled = false;
       }
 
-      // Restore pristine on-screen state
-      saved.forEach(([prop, value, priority]) => {
-        if (value) element.style.setProperty(prop, value, priority);
-        else element.style.removeProperty(prop);
-      });
     }
   };
 
@@ -2279,70 +2179,102 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
   }, [enrolledCoursesWithGrades, gas]);
 
   // Compute course-specific Graduate Attribute (GA) Attainment scores dynamically
-  const courseGaAttainment = useMemo(() => {
-    if (!selectedGaCourseCode) return [];
-    
-    // Find the selected course in enrolledCoursesWithGrades
-    const courseObj = enrolledCoursesWithGrades.find(c => c.code === selectedGaCourseCode);
-    if (!courseObj) return [];
-
-    const gaMap: Record<string, { gaTitle: string; scores: number[] }> = {};
-
-    (courseObj.results?.clos ?? []).forEach((clo: any) => {
-      if (!clo.mappedGA) return;
-      const gaId = typeof clo.mappedGA === 'object' ? clo.mappedGA.gaId : clo.mappedGA;
-      const gaTitle = typeof clo.mappedGA === 'object' ? (clo.mappedGA.gaTitle || gaId) : `Graduate Attribute ${gaId}`;
-      if (!gaId) return;
-
-      if (!gaMap[gaId]) {
-        gaMap[gaId] = { gaTitle, scores: [] };
-      }
-      gaMap[gaId].scores.push(clo.percentage);
-    });
-
-    const list = Object.entries(gaMap).map(([gaId, data]) => {
-      const avg = data.scores.length > 0 
-        ? data.scores.reduce((a, b) => a + b, 0) / data.scores.length 
-        : 0;
-
-      const origGA = findOriginalGA(gaId, gas);
-
+  // CLO rows for EVERY course (CLO tab and CLO report). Replaces the
+  // single-selected-course list used by the old course dropdown.
+  const cloRowsByCourse = useMemo(() => enrolledCoursesWithGrades.map((course: any) => {
+    const rows = (course.results?.clos || []).map((clo: any) => {
+      const ga = clo.mappedGA;
+      const gaId: string | null = ga ? (typeof ga === 'object' ? ga.gaId : ga) : null;
+      const gaName: string | null = ga && typeof ga === 'object' && ga.gaTitle
+        ? ga.gaTitle
+        : (gaId ? (findOriginalGA(gaId, gas)?.name || null) : null);
+      const percentage = Math.round(Number(clo.percentage) || 0);
       return {
-        id: formatGACodeToStandard(gaId),
-        name: origGA?.name || data.gaTitle,
-        description: origGA?.description || `Competency and standard metrics for ${origGA?.name || data.gaTitle}`,
-        score: Math.round(avg * 100) / 100,
-        attained: avg >= 50,
-        contributingCount: data.scores.length,
-        coursesList: [`${courseObj.code} - ${courseObj.title}`]
+        code: clo.code,
+        description: clo.description || `Course Learning Outcome ${clo.code}`,
+        gaId,
+        gaName,
+        percentage,
+        attained: clo.status === 'Attained',
       };
     });
+    const attained = rows.filter((r: any) => r.attained).length;
+    const average = rows.length ? Math.round(rows.reduce((sum: number, r: any) => sum + r.percentage, 0) / rows.length) : null;
+    return { course, rows, attained, average };
+  }), [enrolledCoursesWithGrades, gas]);
 
-    return [...list].sort((a, b) => naturalCompare(a.id, b.id));
-  }, [enrolledCoursesWithGrades, selectedGaCourseCode, gas]);
+  // GA rows for EVERY course: each GA's score is the average of the course's
+  // CLOs mapped to it (same rule as before, applied to all courses). Shows the
+  // real GA code (e.g. "BSCS1"), as on the QA and instructor screens, rather
+  // than a relabelled "GA1" that could merge two different GAs.
+  const gaRowsByCourse = useMemo(() => enrolledCoursesWithGrades.map((course: any) => {
+    const gaMap: Record<string, { gaTitle: string; scores: number[] }> = {};
+    (course.results?.clos ?? []).forEach((clo: any) => {
+      if (!clo.mappedGA) return;
+      const gaId = typeof clo.mappedGA === 'object' ? clo.mappedGA.gaId : clo.mappedGA;
+      if (!gaId) return;
+      const gaTitle = typeof clo.mappedGA === 'object' ? (clo.mappedGA.gaTitle || gaId) : `Graduate Attribute ${gaId}`;
+      if (!gaMap[gaId]) gaMap[gaId] = { gaTitle, scores: [] };
+      gaMap[gaId].scores.push(Number(clo.percentage) || 0);
+    });
+    const rows = Object.entries(gaMap).map(([gaId, data]) => {
+      const avg = data.scores.length ? data.scores.reduce((a, b) => a + b, 0) / data.scores.length : 0;
+      const origGA = findOriginalGA(gaId, gas);
+      return {
+        id: gaId,
+        name: origGA?.name || data.gaTitle,
+        score: Math.round(avg * 100) / 100,
+        attained: avg >= 50,
+        cloCount: data.scores.length,
+      };
+    }).sort((a, b) => naturalCompare(a.id, b.id));
+    const attained = rows.filter(r => r.attained).length;
+    const average = rows.length ? Math.round(rows.reduce((sum, r) => sum + r.score, 0) / rows.length) : null;
+    return { course, rows, attained, average };
+  }), [enrolledCoursesWithGrades, gas]);
+
+  // Expanded course sections on the CLO / GA tabs. The first course that has
+  // data opens by default, like the latest semester on the transcript tab.
+  const [openCloCourses, setOpenCloCourses] = useState<Record<string, boolean>>({});
+  const [openGaCourses, setOpenGaCourses] = useState<Record<string, boolean>>({});
+  const courseKey = (c: any) => String(c.id || c.code);
+  useEffect(() => {
+    const first = cloRowsByCourse.find(x => x.rows.length > 0);
+    if (first) setOpenCloCourses(prev => (Object.keys(prev).length ? prev : { [courseKey(first.course)]: true }));
+  }, [cloRowsByCourse]);
+  useEffect(() => {
+    const first = gaRowsByCourse.find(x => x.rows.length > 0);
+    if (first) setOpenGaCourses(prev => (Object.keys(prev).length ? prev : { [courseKey(first.course)]: true }));
+  }, [gaRowsByCourse]);
+
+  // Downloadable CLO / GA attainment reports. Setting this renders an off-screen
+  // report document; the effect below captures it and clears the flag.
+  const [exportingReport, setExportingReport] = useState<null | 'clo' | 'ga'>(null);
+  useEffect(() => {
+    if (!exportingReport) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        const el = document.getElementById('attainment-report-area');
+        if (!el || cancelled) return;
+        // Wait for the logo so it isn't missing from the PDF.
+        await Promise.all(Array.from(el.querySelectorAll('img')).map(img =>
+          img.complete ? null : new Promise(res => { img.onload = res; img.onerror = res; })
+        ));
+        const reg = activeStudent?.regNo || activeRegNo || 'Student';
+        await exportElementToPdf(el, `Unofficial_${exportingReport === 'clo' ? 'CLO' : 'GA'}_Attainment_${reg}.pdf`);
+      } catch (e) {
+        console.error('Attainment report export failed:', e);
+      } finally {
+        if (!cancelled) setExportingReport(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [exportingReport]);
+
 
   // Aggregate Course Learning Outcomes (CLO) for the selected filter course
-  const filteredCLOList = useMemo(() => {
-    const list: { courseCode: string; courseTitle: string; cloCode: string; description: string; mappedGA: string | null; percentage: number; status: string }[] = [];
-    
-    enrolledCoursesWithGrades.forEach(c => {
-      if (selectedCloCourseCode && c.code !== selectedCloCourseCode) return;
-      
-      c.results.clos.forEach(clo => {
-        list.push({
-          courseCode: c.code,
-          courseTitle: c.title,
-          cloCode: clo.code,
-          description: clo.description || `Course Learning Outcome for ${clo.code}`,
-          mappedGA: clo.mappedGA || null,
-          percentage: Math.round(clo.percentage),
-          status: clo.status
-        });
-      });
-    });
-
-    return list;
-  }, [enrolledCoursesWithGrades, selectedCloCourseCode]);
 
   // Helper to retrieve detailed marks breakdown for expanded views
 
@@ -2733,186 +2665,251 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
               </motion.div>
             )}
 
-            {/* TAB 2: CLO PERFORMANCE ANALYTICS */}
+            {/* CLO ATTAINMENT — same layout as the Semester Transcript tab: one
+                collapsible section per course with a compact table, plus a PDF
+                download. Replaces the course dropdown and attainment cards. */}
             {activeTab === 'obe_clo' && (
               <motion.div
                 key="clo-tab"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6"
+                className="space-y-3"
               >
-                {enrolledCoursesWithGrades.length === 0 ? (
-                  <div className="text-center py-12 text-slate-400 text-xs font-semibold">
-                    No registered courses found.
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">CLO Attainment</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Course Learning Outcomes for each course. 50% or above means the outcome is attained.</p>
                   </div>
-                ) : (
-                  <div className="space-y-6">
-                    {/* Course dropdown. Replaces the grid of course cards and the
-                        "Back to Course List" step: pick a course, see its details. */}
-                    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pb-4 border-b border-slate-100">
-                      <div>
-                        <h3 className="text-base font-bold text-slate-800">Course Learning Outcomes (CLO)</h3>
-                        <p className="text-xs text-slate-400 mt-0.5">Attainment for each outcome of the selected course. 50% or above means the outcome is attained.</p>
-                      </div>
-                      <label className="flex flex-col gap-1 w-full sm:w-96">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Course</span>
-                        <select
-                          value={selectedCloCourseCode || ''}
-                          onChange={(e) => setSelectedCloCourseCode(e.target.value)}
-                          className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 cursor-pointer"
-                        >
-                          {enrolledCoursesWithGrades.map((c, i) => (
-                            <option key={`${c.code}-${i}`} value={c.code}>
-                              {c.code} — {c.title}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-
-                    {filteredCLOList.length === 0 ? (
-                      <div className="text-center py-12 text-slate-400 text-xs font-semibold">
-                        No active CLO targets found in this course.
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {filteredCLOList.map((clo, idx) => {
-                          const attained = clo.status === 'Attained';
-                          return (
-                            <div key={idx} className="bg-slate-50/50 hover:bg-white border border-slate-200/60 p-4.5 rounded-2xl shadow-sm transition-all flex flex-col justify-between gap-3">
-                              <div className="space-y-1.5">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-mono text-sm font-extrabold tracking-wide text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-lg border-2 border-indigo-200/80 shadow-2xs">
-                                      {clo.cloCode}
-                                    </span>
-                                  </div>
-                                  <span className={`text-xs font-black uppercase tracking-wider px-3.5 py-1.5 rounded-lg border-2 shadow-xs transition-all ${
-                                    attained 
-                                      ? 'bg-blue-100 text-blue-800 border-blue-300 shadow-xs' 
-                                      : 'bg-rose-100 text-rose-800 border-rose-300 shadow-xs'
-                                  }`}>
-                                    {clo.status}
-                                  </span>
-                                </div>
-                                <p className="text-[10px] text-slate-500 leading-relaxed font-medium">
-                                  {clo.description}
-                                </p>
-                              </div>
-
-                              <div className="space-y-1 pt-1">
-                                <div className="flex items-center justify-between text-[11px] text-slate-500 font-bold">
-                                  <span>Attainment Progress Index:</span>
-                                  <span className="font-mono text-indigo-950 font-black">{clo.percentage}%</span>
-                                </div>
-                                <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                                  <div 
-                                    className={`h-full rounded-full transition-all duration-500 ${attained ? 'bg-blue-500' : 'bg-amber-500'}`}
-                                    style={{ width: `${clo.percentage}%` }}
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {cloRowsByCourse.length > 0 && (
+                      <button
+                        onClick={() => {
+                          const keys = cloRowsByCourse.map(x => courseKey(x.course));
+                          const allOpen = keys.every(k => openCloCourses[k]);
+                          setOpenCloCourses(Object.fromEntries(keys.map(k => [k, !allOpen])));
+                        }}
+                        className="text-xs font-semibold text-slate-600 hover:text-indigo-700 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                      >
+                        {cloRowsByCourse.every(x => openCloCourses[courseKey(x.course)]) ? 'Collapse all' : 'Expand all'}
+                      </button>
                     )}
+                    <button
+                      onClick={() => setExportingReport('clo')}
+                      disabled={exportingReport !== null || cloRowsByCourse.every(x => x.rows.length === 0)}
+                      className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span>{exportingReport === 'clo' ? 'Preparing PDF…' : 'Download CLO Report'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {cloRowsByCourse.length === 0 && (
+                  <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
+                    <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                    <h3 className="text-sm font-bold text-slate-700">No Registered Courses</h3>
+                    <p className="text-xs text-slate-500 mt-1">No course registrations were found for your student profile.</p>
                   </div>
                 )}
+
+                {cloRowsByCourse.map(({ course, rows, attained, average }) => {
+                  const key = courseKey(course);
+                  const isOpen = !!openCloCourses[key];
+                  return (
+                    <div key={key} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                      <button
+                        type="button"
+                        aria-expanded={isOpen}
+                        onClick={() => setOpenCloCourses(prev => ({ ...prev, [key]: !isOpen }))}
+                        className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <ChevronDown className={`h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900 truncate">
+                              <span className="font-mono text-xs text-indigo-700 mr-2">{course.code}</span>{course.title}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {rows.length ? `${attained} of ${rows.length} CLOs attained` : 'No CLOs recorded yet'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Average</p>
+                          <p className="text-sm font-bold font-mono text-slate-900">{average !== null ? `${average}%` : '—'}</p>
+                        </div>
+                      </button>
+
+                      {isOpen && (rows.length > 0 ? (
+                        <div className="border-t border-slate-200 overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                                    <th className="text-left font-semibold px-4 sm:px-5 py-2.5 w-20">CLO</th>
+                                    <th className="text-left font-semibold px-3 py-2.5">Learning Outcome</th>
+                                    <th className="hidden md:table-cell text-left font-semibold px-3 py-2.5">Mapped GA</th>
+                                    <th className="text-right font-semibold px-3 py-2.5 w-36">Attainment</th>
+                                    <th className="text-center font-semibold px-4 sm:px-5 py-2.5 w-32">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                  {rows.map((r: any, i: number) => (
+                                    <tr key={`${r.code}-${i}`} className="hover:bg-slate-50/60 align-top">
+                                      <td className="px-4 sm:px-5 py-3 font-mono text-xs font-semibold text-indigo-700 whitespace-nowrap">{r.code}</td>
+                                      <td className="px-3 py-3 text-slate-700">{r.description}</td>
+                                      <td className="hidden md:table-cell px-3 py-3 text-slate-600 text-xs">
+                                        {r.gaId ? <><span className="font-mono font-semibold text-slate-800">{r.gaId}</span>{r.gaName ? <span className="block text-slate-500">{r.gaName}</span> : null}</> : '—'}
+                                      </td>
+                                      <td className="px-3 py-3">
+                                        <div className="flex items-center justify-end gap-2">
+                                          <div className="hidden sm:block w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                            <div className={`h-full rounded-full ${r.attained ? 'bg-blue-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(100, Math.max(0, r.percentage))}%` }} />
+                                          </div>
+                                          <span className="font-mono text-slate-800 w-10 text-right">{r.percentage}%</span>
+                                        </div>
+                                      </td>
+                                      <td className="px-4 sm:px-5 py-3 text-center">
+                                        <span className={`inline-block px-2 py-0.5 text-[11px] font-bold rounded border whitespace-nowrap ${r.attained ? 'bg-blue-50 text-blue-800 border-blue-200' : 'bg-red-50 text-red-800 border-red-200'}`}>
+                                          {r.attained ? 'Attained' : 'Not Attained'}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="border-t border-slate-200 px-5 py-4 text-xs text-slate-500">
+                          {'No CLOs have been defined for this course yet.'}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
               </motion.div>
             )}
 
-            {/* TAB 3: GA ATTAINMENT PROFILE */}
+            {/* GA ATTAINMENT — same layout as the Semester Transcript tab: one
+                collapsible section per course with a compact table, plus a PDF
+                download. Replaces the course dropdown and attainment cards. */}
             {activeTab === 'ga_attainment' && (
               <motion.div
                 key="ga-tab"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6"
+                className="space-y-3"
               >
-                {enrolledCoursesWithGrades.length === 0 ? (
-                  <div className="text-center py-12 text-slate-400 text-xs font-semibold">
-                    No registered courses found.
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">GA Attainment</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Graduate Attributes each course contributes to, averaged from its mapped CLOs. 50% or above is attained.</p>
                   </div>
-                ) : (
-                  <div className="space-y-6">
-                    {/* Course dropdown. Replaces the grid of course cards and the
-                        "Back to Course List" step: pick a course, see its details. */}
-                    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pb-4 border-b border-slate-100">
-                      <div>
-                        <h3 className="text-base font-bold text-slate-800">Graduate Attribute (GA) Attainment</h3>
-                        <p className="text-xs text-slate-400 mt-0.5">Graduate Attributes this course contributes to, and your attainment in each.</p>
-                      </div>
-                      <label className="flex flex-col gap-1 w-full sm:w-96">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Course</span>
-                        <select
-                          value={selectedGaCourseCode || ''}
-                          onChange={(e) => setSelectedGaCourseCode(e.target.value)}
-                          className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
-                        >
-                          {enrolledCoursesWithGrades.map((c, i) => (
-                            <option key={`${c.code}-${i}`} value={c.code}>
-                              {c.code} — {c.title}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-
-                    {courseGaAttainment.length === 0 ? (
-                      <div className="text-center py-12 text-slate-400 text-xs font-semibold">
-                        No Graduate Attributes mapped to this course's learning outcomes.
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {courseGaAttainment.map((ga, idx) => {
-                          const attained = ga.score >= 50;
-                          return (
-                            <div key={idx} className="bg-slate-50/50 hover:bg-white border border-slate-200/60 p-4.5 rounded-2xl shadow-sm transition-all flex flex-col justify-between gap-3">
-                              <div className="space-y-1.5">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-mono text-sm font-extrabold tracking-wide text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg border-2 border-blue-200/80 shadow-2xs">
-                                      {formatGACodeToStandard(ga.id)}
-                                    </span>
-                                  </div>
-                                  <span className={`text-xs font-black uppercase tracking-wider px-3.5 py-1.5 rounded-lg border-2 shadow-xs transition-all ${
-                                    attained 
-                                      ? 'bg-blue-100 text-blue-800 border-blue-300 shadow-xs' 
-                                      : 'bg-rose-100 text-rose-800 border-rose-300 shadow-xs'
-                                  }`}>
-                                    {attained ? 'Attained' : 'Not Attained'}
-                                  </span>
-                                </div>
-                                <div className="space-y-1">
-                                  <h4 className="text-sm font-bold text-slate-800 tracking-tight leading-snug">{ga.name}</h4>
-                                  <p className="text-[10px] text-slate-500 leading-relaxed font-medium">
-                                    {ga.description}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="space-y-1 pt-1">
-                                <div className="flex items-center justify-between text-[11px] text-slate-500 font-bold">
-                                  <span>Attainment Progress Index:</span>
-                                  <span className="font-mono text-blue-950 font-black">{ga.score.toFixed(2)}%</span>
-                                </div>
-                                <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                                  <div 
-                                    className={`h-full rounded-full transition-all duration-500 ${attained ? 'bg-blue-500' : 'bg-amber-500'}`}
-                                    style={{ width: `${ga.score}%` }}
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {gaRowsByCourse.length > 0 && (
+                      <button
+                        onClick={() => {
+                          const keys = gaRowsByCourse.map(x => courseKey(x.course));
+                          const allOpen = keys.every(k => openGaCourses[k]);
+                          setOpenGaCourses(Object.fromEntries(keys.map(k => [k, !allOpen])));
+                        }}
+                        className="text-xs font-semibold text-slate-600 hover:text-indigo-700 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                      >
+                        {gaRowsByCourse.every(x => openGaCourses[courseKey(x.course)]) ? 'Collapse all' : 'Expand all'}
+                      </button>
                     )}
+                    <button
+                      onClick={() => setExportingReport('ga')}
+                      disabled={exportingReport !== null || gaRowsByCourse.every(x => x.rows.length === 0)}
+                      className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span>{exportingReport === 'ga' ? 'Preparing PDF…' : 'Download GA Report'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {gaRowsByCourse.length === 0 && (
+                  <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
+                    <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                    <h3 className="text-sm font-bold text-slate-700">No Registered Courses</h3>
+                    <p className="text-xs text-slate-500 mt-1">No course registrations were found for your student profile.</p>
                   </div>
                 )}
+
+                {gaRowsByCourse.map(({ course, rows, attained, average }) => {
+                  const key = courseKey(course);
+                  const isOpen = !!openGaCourses[key];
+                  return (
+                    <div key={key} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                      <button
+                        type="button"
+                        aria-expanded={isOpen}
+                        onClick={() => setOpenGaCourses(prev => ({ ...prev, [key]: !isOpen }))}
+                        className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <ChevronDown className={`h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900 truncate">
+                              <span className="font-mono text-xs text-indigo-700 mr-2">{course.code}</span>{course.title}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {rows.length ? `${attained} of ${rows.length} GAs attained` : 'No GAs recorded yet'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Average</p>
+                          <p className="text-sm font-bold font-mono text-slate-900">{average !== null ? `${average}%` : '—'}</p>
+                        </div>
+                      </button>
+
+                      {isOpen && (rows.length > 0 ? (
+                        <div className="border-t border-slate-200 overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                                    <th className="text-left font-semibold px-4 sm:px-5 py-2.5 w-24">GA Code</th>
+                                    <th className="text-left font-semibold px-3 py-2.5">Graduate Attribute</th>
+                                    <th className="hidden sm:table-cell text-center font-semibold px-3 py-2.5 w-24">CLOs</th>
+                                    <th className="text-right font-semibold px-3 py-2.5 w-36">Attainment</th>
+                                    <th className="text-center font-semibold px-4 sm:px-5 py-2.5 w-32">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                  {rows.map((r: any, i: number) => (
+                                    <tr key={`${r.id}-${i}`} className="hover:bg-slate-50/60">
+                                      <td className="px-4 sm:px-5 py-3 font-mono text-xs font-semibold text-blue-700 whitespace-nowrap">{r.id}</td>
+                                      <td className="px-3 py-3 text-slate-800 font-medium">{r.name}</td>
+                                      <td className="hidden sm:table-cell px-3 py-3 text-center font-mono text-slate-600">{r.cloCount}</td>
+                                      <td className="px-3 py-3">
+                                        <div className="flex items-center justify-end gap-2">
+                                          <div className="hidden sm:block w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                            <div className={`h-full rounded-full ${r.attained ? 'bg-blue-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(100, Math.max(0, r.score))}%` }} />
+                                          </div>
+                                          <span className="font-mono text-slate-800 w-14 text-right">{Number(r.score).toFixed(1)}%</span>
+                                        </div>
+                                      </td>
+                                      <td className="px-4 sm:px-5 py-3 text-center">
+                                        <span className={`inline-block px-2 py-0.5 text-[11px] font-bold rounded border whitespace-nowrap ${r.attained ? 'bg-blue-50 text-blue-800 border-blue-200' : 'bg-red-50 text-red-800 border-red-200'}`}>
+                                          {r.attained ? 'Attained' : 'Not Attained'}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="border-t border-slate-200 px-5 py-4 text-xs text-slate-500">
+                          {'None of this course\u2019s CLOs are mapped to a Graduate Attribute yet.'}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
               </motion.div>
             )}
 
@@ -2977,6 +2974,108 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
           }
         }
       `}</style>
+
+      {/* OFF-SCREEN CLO / GA ATTAINMENT REPORT. Rendered only while a report
+          download is in progress, captured to PDF, then removed. Same document
+          style as the transcript, with every course's table expanded. */}
+      {exportingReport && (
+        <div aria-hidden="true" style={{ position: 'fixed', left: '-10000px', top: 0, width: '800px', pointerEvents: 'none' }}>
+          <div id="attainment-report-area" className="bg-white text-black font-sans leading-relaxed antialiased" style={{ width: '800px' }}>
+            <div className="flex flex-col items-center mb-6 border-b border-black pb-4">
+              <img src="/iqralogo.png" alt="Iqra University Logo" className="h-16 w-auto object-contain mb-2" referrerPolicy="no-referrer" />
+              <h1 className="text-lg font-black tracking-widest text-black uppercase font-mono">
+                {exportingReport === 'clo' ? 'Unofficial CLO Attainment Report' : 'Unofficial GA Attainment Report'}
+              </h1>
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 mb-6 text-[11px] font-mono border-b border-black/20 pb-4">
+              {[
+                ['STUDENT NAME', activeStudent?.name],
+                ['DEPARTMENT', activeDepartment?.name || '—'],
+                ['REG NUMBER', activeStudent?.regNo || activeRegNo],
+                ['PROGRAM', activeDegreeTitle || '—'],
+              ].map(([label, value]) => (
+                <div key={label as string} className="grid grid-cols-[7.5rem_1fr] gap-2 items-baseline">
+                  <span className="font-bold text-slate-500">{label}:</span>
+                  <span className="font-extrabold text-black uppercase break-words">{value}</span>
+                </div>
+              ))}
+            </div>
+
+            {(exportingReport === 'clo' ? cloRowsByCourse : gaRowsByCourse).map(({ course, rows, attained, average }: any) => (
+              <div key={courseKey(course)} data-pdf-block="" className="mb-5">
+                <div className="flex justify-between items-baseline gap-4 border-b-2 border-black pb-1 mb-1 text-[11px] font-mono">
+                  <span className="font-black uppercase">{course.code} — {course.title}</span>
+                  <span className="font-bold whitespace-nowrap">
+                    {rows.length ? `${attained}/${rows.length} ATTAINED · AVG ${average}%` : '—'}
+                  </span>
+                </div>
+                {rows.length === 0 ? (
+                  <p className="text-[10px] font-mono text-slate-500 py-1">
+                    {exportingReport === 'clo' ? 'No CLOs recorded for this course.' : 'No CLOs of this course are mapped to a Graduate Attribute.'}
+                  </p>
+                ) : (
+                  <table className="w-full border-collapse text-[10px] font-mono leading-normal">
+                    <thead>
+                      <tr className="text-left border-b border-black/40">
+                        {exportingReport === 'clo' ? (
+                          <>
+                            <th className="py-1.5 pr-3 font-bold uppercase w-[60px]">CLO</th>
+                            <th className="py-1.5 pr-3 font-bold uppercase">Learning Outcome</th>
+                            <th className="py-1.5 pr-3 font-bold uppercase w-[150px]">Mapped GA</th>
+                            <th className="py-1.5 pr-3 font-bold uppercase w-[80px] text-right">Attainment</th>
+                            <th className="py-1.5 font-bold uppercase w-[95px] text-right">Status</th>
+                          </>
+                        ) : (
+                          <>
+                            <th className="py-1.5 pr-3 font-bold uppercase w-[90px]">GA Code</th>
+                            <th className="py-1.5 pr-3 font-bold uppercase">Graduate Attribute</th>
+                            <th className="py-1.5 pr-3 font-bold uppercase w-[50px] text-center">CLOs</th>
+                            <th className="py-1.5 pr-3 font-bold uppercase w-[80px] text-right">Attainment</th>
+                            <th className="py-1.5 font-bold uppercase w-[95px] text-right">Status</th>
+                          </>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r: any, i: number) => (
+                        <tr key={i} className="border-b border-black/10 align-top">
+                          {exportingReport === 'clo' ? (
+                            <>
+                              <td className="py-1.5 pr-3 font-bold">{r.code}</td>
+                              <td className="py-1.5 pr-3 break-words">{r.description}</td>
+                              <td className="py-1.5 pr-3 break-words">{r.gaId ? `${r.gaId}${r.gaName ? ' — ' + r.gaName : ''}` : '—'}</td>
+                              <td className="py-1.5 pr-3 text-right">{r.percentage}%</td>
+                              <td className="py-1.5 text-right font-bold">{r.attained ? 'ATTAINED' : 'NOT ATTAINED'}</td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="py-1.5 pr-3 font-bold">{r.id}</td>
+                              <td className="py-1.5 pr-3 break-words">{r.name}</td>
+                              <td className="py-1.5 pr-3 text-center">{r.cloCount}</td>
+                              <td className="py-1.5 pr-3 text-right">{Number(r.score).toFixed(1)}%</td>
+                              <td className="py-1.5 text-right font-bold">{r.attained ? 'ATTAINED' : 'NOT ATTAINED'}</td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            ))}
+
+            <div className="mt-6 pt-4 border-t-2 border-black flex justify-between items-start text-[10px] font-mono">
+              <div className="font-bold">ATTAINED = 50% OR ABOVE</div>
+              <div className="text-right text-[8px] text-slate-500">
+                * IQRA UNIVERSITY UNOFFICIAL PORTAL ATTAINMENT REPORT *
+                <br />
+                DATE PRINTED: {new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TRANSCRIPT PREVIEW MODAL */}
       <AnimatePresence>
