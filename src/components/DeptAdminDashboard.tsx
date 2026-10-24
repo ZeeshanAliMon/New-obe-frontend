@@ -2717,111 +2717,107 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
 
 
           {/* TAB 4: TEACHER COURSE ASSIGNMENT */}
-          {activeTab === 'teacher-assignments' && (
-            <div className="space-y-6">
-              <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm">
-                <h2 className="text-xl font-bold text-slate-900 mb-1">Teacher Course Assignments</h2>
-                <p className="text-xs text-slate-500 mb-6">Assign courses to faculty members. This automatically provisions their digital grading spreadsheets.</p>
+          {activeTab === 'teacher-assignments' && (() => {
+            const inputCls = 'w-full px-3.5 py-2.5 bg-white border border-slate-200 focus:ring-2 focus:ring-indigo-600/10 focus:border-indigo-600 rounded-xl text-sm font-medium text-slate-700 outline-none transition-all';
+            const labelCls = 'block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5';
+            const initialsOf = (name: string) =>
+              (name || '?').replace(/^(dr|prof|mr|ms|mrs)\.?\s+/i, '').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase()).join('') || '?';
+            return (
+            <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
+              {/* Header + assign form */}
+              <div className="px-5 sm:px-6 pt-5 pb-4">
+                <h2 className="text-lg font-bold text-slate-900">Teacher Course Assignments</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Assign courses to faculty members. This automatically provisions their digital grading spreadsheets.</p>
+              </div>
 
-                <form onSubmit={handleAssignCourseToTeacher} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end bg-slate-50/40 p-4 rounded-2xl border border-slate-100 mb-8">
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Select Teacher</label>
-                    <select 
-                      value={selectedTeacherId}
-                      onChange={(e) => setSelectedTeacherId(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none transition-all"
-                      required
-                    >
-                      <option key="placeholder-select-faculty" value="">Select Faculty...</option>
-                      {teachers.map((t, idx) => (
-                        <option key={`${t.id || 'teacher'}-${idx}`} value={t.employeeId || t.id}>{t.name} ({t.employeeId || t.id})</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Select Course Code</label>
-                    <select 
-                      value={selectedCourseCodeForTeacher}
-                      onChange={(e) => setSelectedCourseCodeForTeacher(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none transition-all"
-                      required
-                    >
-                      <option key="placeholder-select-course" value="">Select Course...</option>
-                      {courses.filter(c => c.departmentId === activeDeptId).map((c, idx) => {
-                        const progObj = programs.find(p => String(p.id).trim().toLowerCase() === String(c.programId).trim().toLowerCase());
-                        const progLabel = progObj ? progObj.code.toUpperCase() : 'Common';
-                        return (
-                          <option key={`${c.id || c.code}-${idx}`} value={c.code}>
-                            {c.code} — {c.title} ({progLabel})
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Target Program (Optional)</label>
-                    <select 
-                      value={selectedProgramForTeacher}
-                      onChange={(e) => setSelectedProgramForTeacher(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none transition-all"
-                    >
-                      <option key="placeholder-all-programs" value="">All Programs (Shared)</option>
-                      {adminPrograms.map((p, idx) => (
-                        <option key={`${p.id}-${idx}`} value={p.id}>{p.code.toUpperCase()} - {p.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Academic Year</label>
-                    <select 
-                      value={assignmentAcademicYear}
-                      onChange={(e) => setAssignmentAcademicYear(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none transition-all"
-                      required
-                    >
-                      {getAcademicYearOptions().map(option => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <button 
-                      type="submit"
-                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <Link className="h-3.5 w-3.5" />
-                      <span>Assign Course</span>
-                    </button>
-                  </div>
-                </form>
-
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                  <h3 className="text-sm font-bold text-slate-800">Assigned Courses Grid</h3>
-                  <div className="relative max-w-xs w-full">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                    <input 
-                      type="text" 
-                      placeholder="Search teacher or course..." 
-                      value={assignmentSearch}
-                      onChange={(e) => setAssignmentSearch(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 bg-slate-50 hover:bg-slate-100/70 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-indigo-600/10 focus:border-indigo-600 rounded-xl outline-none text-xs font-medium transition-all"
-                    />
-                  </div>
+              <form onSubmit={handleAssignCourseToTeacher} className="px-5 sm:px-6 py-4 bg-slate-50/60 border-y border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.3fr_1.6fr_1.2fr_0.9fr_auto] gap-3 items-end">
+                <div className="min-w-0">
+                  <label className={labelCls}>Teacher</label>
+                  <select value={selectedTeacherId} onChange={(e) => setSelectedTeacherId(e.target.value)} className={inputCls} required>
+                    <option key="placeholder-select-faculty" value="">Select faculty...</option>
+                    {teachers.map((t, idx) => (
+                      <option key={`${t.id || 'teacher'}-${idx}`} value={t.employeeId || t.id}>{t.name} ({t.employeeId || t.id})</option>
+                    ))}
+                  </select>
                 </div>
+                <div className="min-w-0">
+                  <label className={labelCls}>Course</label>
+                  <select value={selectedCourseCodeForTeacher} onChange={(e) => setSelectedCourseCodeForTeacher(e.target.value)} className={inputCls} required>
+                    <option key="placeholder-select-course" value="">Select course...</option>
+                    {courses.filter(c => c.departmentId === activeDeptId).map((c, idx) => {
+                      const progObj = programs.find(p => String(p.id).trim().toLowerCase() === String(c.programId).trim().toLowerCase());
+                      const progLabel = progObj ? progObj.code.toUpperCase() : 'Common';
+                      return (
+                        <option key={`${c.id || c.code}-${idx}`} value={c.code}>
+                          {c.code} — {c.title} ({progLabel})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div className="min-w-0">
+                  <label className={labelCls}>Program <span className="normal-case font-normal text-slate-400">(optional)</span></label>
+                  <select value={selectedProgramForTeacher} onChange={(e) => setSelectedProgramForTeacher(e.target.value)} className={inputCls}>
+                    <option key="placeholder-all-programs" value="">All programs (shared)</option>
+                    {adminPrograms.map((p, idx) => (
+                      <option key={`${p.id}-${idx}`} value={p.id}>{p.code.toUpperCase()} - {p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="min-w-0">
+                  <label className={labelCls}>Academic Year</label>
+                  <select value={assignmentAcademicYear} onChange={(e) => setAssignmentAcademicYear(e.target.value)} className={inputCls} required>
+                    {getAcademicYearOptions().map(option => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="submit"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-5 rounded-xl text-sm shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Link className="h-4 w-4" />
+                  <span>Assign</span>
+                </button>
+              </form>
 
-                <div className="overflow-x-auto border border-slate-100 rounded-xl">
-                  <table className="min-w-full divide-y divide-slate-100">
-                    <thead className="bg-slate-50 text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                      <tr>
-                        <th className="px-5 py-3 text-left">Teacher</th>
-                        <th className="px-5 py-3 text-left">Course</th>
-                        <th className="px-5 py-3 text-left">Program</th>
-                        <th className="px-5 py-3 text-center">Term / Year</th>
-                        <th className="px-5 py-3 text-center">Status</th>
-                        <th className="px-5 py-3 text-center">Action</th>
+              {/* Assignments list */}
+              <div className="px-5 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">Assigned Courses</h3>
+                  <p className="text-xs text-slate-500">{filteredAssignments.length} assignment{filteredAssignments.length === 1 ? '' : 's'}</p>
+                </div>
+                <div className="relative w-full sm:w-72">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search teacher or course..."
+                    value={assignmentSearch}
+                    onChange={(e) => setAssignmentSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 hover:bg-slate-100/70 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-indigo-600/10 focus:border-indigo-600 rounded-xl outline-none text-sm transition-all"
+                  />
+                </div>
+              </div>
+
+              {filteredAssignments.length === 0 ? (
+                <div className="px-6 py-12 text-center border-t border-slate-100">
+                  <p className="text-sm font-semibold text-slate-700">{assignmentSearch.trim() ? 'No assignments match your search' : 'No courses assigned yet'}</p>
+                  <p className="text-xs text-slate-500 mt-1">{assignmentSearch.trim() ? 'Try a different teacher or course.' : 'Use the form above to assign a course to a teacher.'}</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto border-t border-slate-100">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                        <th className="text-left font-semibold px-5 sm:px-6 py-3">Teacher</th>
+                        <th className="text-left font-semibold px-3 py-3">Course</th>
+                        <th className="hidden md:table-cell text-left font-semibold px-3 py-3">Program</th>
+                        <th className="text-left font-semibold px-3 py-3">Term</th>
+                        <th className="text-center font-semibold px-3 py-3">Status</th>
+                        <th className="text-right font-semibold px-5 sm:px-6 py-3 w-24">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-600 bg-white">
+                    <tbody className="divide-y divide-slate-100">
                       {filteredAssignments.map((a, idx) => {
                         const teacher = teachers.find(t => matchTeacher(t, a.teacherId));
                         const assignmentProgClean = a.programId ? String(a.programId).trim().toLowerCase() : '';
@@ -2830,61 +2826,50 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
                         const isClosed = a.status === 'closed';
 
                         return (
-                          <tr key={idx} className="hover:bg-slate-50/50 transition-all">
-                            <td className="px-5 py-3.5">
-                              <div className="font-bold text-slate-800">{teacher?.name || 'Unknown Teacher'}</div>
-                              <div className="text-[10px] text-slate-400 font-mono font-normal">{teacher?.email || ''}</div>
+                          <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
+                            <td className="px-5 sm:px-6 py-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="h-9 w-9 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 flex items-center justify-center text-xs font-bold shrink-0">
+                                  {initialsOf(teacher?.name || '')}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-semibold text-slate-900 truncate">{teacher?.name || 'Unknown Teacher'}</p>
+                                  <p className="text-xs text-slate-500 truncate">{teacher?.email || ''}</p>
+                                </div>
+                              </div>
                             </td>
-                            <td className="px-5 py-3.5">
-                              <div className="font-mono font-bold text-indigo-650">{a.courseCode}</div>
-                              <div className="text-[10px] text-slate-500 font-medium mt-0.5">{course?.title || ''}</div>
+                            <td className="px-3 py-3">
+                              <p className="font-mono text-xs font-bold text-indigo-700">{a.courseCode}</p>
+                              <p className="text-slate-700">{course?.title || ''}</p>
                             </td>
-                            <td className="px-5 py-3.5">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${prog ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
-                                {prog ? prog.code.toUpperCase() : 'ALL PROGRAMS'}
+                            <td className="hidden md:table-cell px-3 py-3">
+                              <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-semibold ${prog ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                                {prog ? prog.code.toUpperCase() : 'All programs'}
                               </span>
                             </td>
-                            <td className="px-5 py-3.5 text-center font-mono text-slate-500 font-bold">
-                              {a.academicYear || 'Fall-2024'}
-                            </td>
-                            <td className="px-5 py-3.5 text-center">
+                            <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{a.academicYear || 'Fall-2024'}</td>
+                            <td className="px-3 py-3 text-center">
                               {isClosed ? (
-                                <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-[9px] font-black uppercase font-mono border border-blue-200">
-                                  <Lock className="w-2.5 h-2.5" />
-                                  CLOSED
+                                <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full text-xs font-semibold border border-slate-200">
+                                  <Lock className="w-3 h-3" />
+                                  Closed
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full text-[9px] font-black uppercase font-mono border border-sky-200">
-                                  <span className="w-1 h-1 rounded-full bg-sky-500 animate-pulse" />
-                                  ACTIVE
+                                <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full text-xs font-semibold border border-blue-100">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                  Active
                                 </span>
                               )}
                             </td>
-                            <td className="px-5 py-3.5 text-center">
-                              <div className="flex items-center justify-center gap-2">
-                                {!isClosed ? (
-                                  <button
-                                    onClick={() => handleFinalizeCourse(a)}
-                                    className="inline-flex items-center gap-1 text-[11px] font-black text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-indigo-150 shadow-xs transition-all cursor-pointer"
-                                    title="Close Semester & Generate Permanent Transcripts"
-                                  >
-                                    <Award className="h-3.5 w-3.5" />
-                                    <span>Close Semester</span>
-                                  </button>
-                                ) : (
-                                  <span className="text-[10px] text-blue-600 font-bold flex items-center gap-1 italic bg-blue-50/50 px-2 py-1 rounded-lg border border-blue-100">
-                                    <Award className="h-3.5 w-3.5" />
-                                    Sealed
-                                  </span>
-                                )}
-                                <button
-                                  onClick={() => handleRemoveTeacherAssignment(a.teacherId, a.courseCode, a.programId)}
-                                  className="inline-flex items-center gap-1 text-xs font-bold text-red-500 hover:text-red-700 hover:bg-red-50 px-2.5 py-1 rounded-lg transition-all"
-                                >
-                                  <Unlink className="h-3.5 w-3.5" />
-                                  <span>Unassign</span>
-                                </button>
-                              </div>
+                            <td className="px-5 sm:px-6 py-3 text-right">
+                              <button
+                                onClick={() => handleRemoveTeacherAssignment(a.teacherId, a.courseCode, a.programId)}
+                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-rose-600 hover:bg-rose-50 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer"
+                                title="Unassign this course from the teacher"
+                              >
+                                <Unlink className="h-3.5 w-3.5" />
+                                <span>Unassign</span>
+                              </button>
                             </td>
                           </tr>
                         );
@@ -2892,9 +2877,10 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
                     </tbody>
                   </table>
                 </div>
-              </div>
+              )}
             </div>
-          )}
+            );
+          })()}
 
 
           {/* TAB 5: STUDENT ENROLLMENTS */}
