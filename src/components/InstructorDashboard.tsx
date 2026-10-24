@@ -806,6 +806,34 @@ const getDynamicStyles = (colsCount: number) => {
   }
 };
 
+/**
+ * Single source of truth for a mark sheet's page orientation.
+ *
+ * Three places used to decide this independently and disagreed:
+ *   - the document itself:  units in categories weighted > 0, column counts
+ *   - the print wrapper:    units across ALL categories (0% ones included) > 5
+ *   - the PDF export:       rendered pixel width > 850
+ * A course with unused 0% categories, for example, was laid out portrait but
+ * printed onto a landscape-width wrapper, squeezing or clipping columns.
+ *
+ * This reproduces the document's original rule exactly (that's what the
+ * layout, font sizing and @page size were built around), and all three now
+ * call it.
+ */
+const isMarksheetLandscape = (course: InstructorCourse, reportType: string): boolean => {
+  if (reportType === 'clo' || reportType === 'ga') return true;
+  const activeCats = course.categories.filter(c => c.percentage > 0);
+  if (reportType === 'standard') {
+    const unitCols = activeCats.reduce((s, c) => s + c.units, 0);
+    // S.#, Reg No, Name + one column per unit + Total, Grade
+    return unitCols > 5 || (3 + unitCols + 2) > 8;
+  }
+  if (reportType === 'combined') {
+    return activeCats.length > 6 || (3 + activeCats.length + 2) > 8;
+  }
+  return false;
+};
+
 const MarksheetDocument = ({
   course,
   campus,
@@ -1122,7 +1150,7 @@ const MarksheetDocument = ({
     totalTableCols = 3 + activeCats.length + 2;
   }
 
-  const isLandscapeReport = reportType === 'clo' || reportType === 'ga' || (reportType === 'standard' && totalColumns.length > 5) || (reportType === 'combined' && activeCats.length > 6) || totalTableCols > 8;
+  const isLandscapeReport = isMarksheetLandscape(course, reportType);
 
   const ds = getDynamicStyles(totalTableCols);
   const gaFontSize = totalTableCols <= 12 ? '13px' : totalTableCols <= 18 ? '11.5px' : totalTableCols <= 25 ? '10.5px' : '9.5px';
@@ -2740,7 +2768,8 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
       });
 
       const requiredWidth = Math.max(element.scrollWidth, element.offsetWidth, maxTableScrollWidth);
-      const isLandscape = reportType === 'clo' || reportType === 'ga' || requiredWidth > 850;
+      // Same rule the document was laid out with — see isMarksheetLandscape.
+      const isLandscape = selectedCourse ? isMarksheetLandscape(selectedCourse, reportType) : requiredWidth > 850;
       const targetBaseWidth = isLandscape ? 1130 : 800;
       const renderWidth = Math.max(requiredWidth + 32, targetBaseWidth);
 
@@ -4588,7 +4617,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
         {/* The Actual Printable Marksheet Document Container */}
         <div className="flex-1 bg-slate-100 overflow-auto p-4 md:p-8 print:p-0 print:bg-white print:overflow-visible">
           <div className={`mx-auto bg-white shadow-xl rounded-xl border border-slate-200 p-8 print:p-0 print:shadow-none print:border-none print:max-w-none print:bg-white print:rounded-none ${
-            (reportType === 'clo' || reportType === 'ga' || (selectedCourse && selectedCourse.categories.reduce((s, c) => s + c.units, 0) > 5)) ? 'max-w-fit min-w-[297mm] w-fit' : 'max-w-[210mm] w-full'
+            isMarksheetLandscape(selectedCourse, reportType) ? 'max-w-fit min-w-[297mm] w-fit' : 'max-w-[210mm] w-full'
           }`}>
             <MarksheetDocument
               course={selectedCourse}
