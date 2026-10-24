@@ -2715,8 +2715,25 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
       element.style.width = `${renderWidth}px`;
       element.style.maxWidth = 'none';
 
+      // Reset the scroll wrappers back to full width as well.
+      //
+      // Step 1 above sets both the wrappers and the tables to `max-content` so
+      // the true unclipped width can be measured. The tables were being reset
+      // here, but the wrappers were not — they stayed at `max-content` for the
+      // capture. A table at `width: 100%` inside a shrink-to-fit wrapper
+      // resolves to the table's own content width, so the ledger rendered at
+      // roughly 60% of the sheet while the header blocks (plain `w-full` divs)
+      // spanned the whole thing. That mismatch was the white gap down the
+      // right-hand side of the exported PDF.
+      originalWrappers.forEach(item => {
+        item.el.style.width = '100%';
+      });
+
       originalTables.forEach(item => {
         item.el.style.width = '100%';
+        // Step 1 set this to '100%', which is circular once the wrapper is
+        // also percentage-based; clear it so the table simply fills the wrapper.
+        item.el.style.minWidth = '0';
       });
 
       // Force layout calculation refresh
@@ -2788,6 +2805,9 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
 
       originalTables.forEach(item => {
         item.el.style.width = item.width;
+        // minWidth was captured in originalTables but never restored, so every
+        // export left an inline min-width on the preview tables.
+        item.el.style.minWidth = item.minWidth;
         item.el.style.tableLayout = item.tableLayout;
       });
     }
