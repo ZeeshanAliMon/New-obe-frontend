@@ -5179,12 +5179,41 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                             }
                           } catch (e) {}
 
-                          // Sync to backend enroll endpoint
-                          apiService.enrollStudents(selectedCourse.id, updatedStudents).catch(err => {
-                            console.warn("Backend student enrollment sync warning:", err);
-                          });
-
-                          showNotification(`Enrolled student ${stdName} (${cleanReg})!`);
+                          // Persist to the server. This used to call the dept-admin
+                          // full-sync endpoint, which always 403s for instructors;
+                          // the error was swallowed, so the student only ever lived
+                          // in this browser. Use the instructor's add-only endpoint,
+                          // and only report success once the server confirms.
+                          const courseIdForSave = selectedCourse.id;
+                          apiService.addStudentsToInstructorCourse(courseIdForSave, [{ regNo: cleanReg, name: stdName }])
+                            .then(() => {
+                              showNotification(`Enrolled student ${stdName} (${cleanReg})!`, 'success');
+                            })
+                            .catch(err => {
+                              console.error("Failed to enroll student on server:", err);
+                              // Roll back the optimistic add so the roster doesn't
+                              // show a student the server never received.
+                              setCourses(prev => prev.map(c => c.id === courseIdForSave
+                                ? { ...c, students: (c.students || []).filter(s => !areRegNosEqual(s.regNo, cleanReg)) }
+                                : c));
+                              // Also drop the local student binding written above, or the
+                              // Student Dashboard would still show this enrollment.
+                              try {
+                                const raw = localStorage.getItem('IQRA_OBE_STUDENT_BINDINGS');
+                                const list = raw ? JSON.parse(raw) : [];
+                                if (Array.isArray(list)) {
+                                  localStorage.setItem('IQRA_OBE_STUDENT_BINDINGS', JSON.stringify(
+                                    list.filter((b: any) => !(areRegNosEqual(b.studentRegNo, cleanReg) && b.courseCode === selectedCourse.code))
+                                  ));
+                                }
+                              } catch (e) {
+                                console.error("Could not roll back local student binding:", e);
+                              }
+                              showNotification(
+                                `Could not enroll ${cleanReg}: ${err?.message || 'server error'}. Student was NOT added.`,
+                                'error'
+                              );
+                            });
                         }}
                         onUnenrollStudent={handleUnenrollStudent}
                       />

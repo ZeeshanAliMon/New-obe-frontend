@@ -731,6 +731,23 @@ export const apiService = {
     return getLocalInstructorCourses();
   },
 
+  /**
+   * Instructor adds students to one of their own courses. Add-only: unlike
+   * enrollStudents (the dept-admin full sync, which deletes anyone missing
+   * from the list), this never removes anyone.
+   */
+  async addStudentsToInstructorCourse(courseId: string, students: { regNo: string; name: string }[]): Promise<void> {
+    const res = await fetchWithTimeout(
+      `${BASE_URL}/instructor/courses/${encodeURIComponent(courseId)}/students/`,
+      { method: 'POST', headers: getHeaders(), body: JSON.stringify({ students }) },
+      10000
+    );
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || errData.detail || `Could not add student (Status ${res.status})`);
+    }
+  },
+
   async enrollStudents(courseId: string, students: { regNo: string; name: string }[]): Promise<void> {
     const res = await fetchWithTimeout(`${BASE_URL}/admin/enroll/`, {
       method: 'POST',
