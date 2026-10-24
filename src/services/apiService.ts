@@ -661,6 +661,27 @@ export const apiService = {
   },
 
   async createProgram(data: Program, associatedGAs?: GA[]): Promise<Program> {
+    // Program FIRST, then its GAs. This used to post the GAs before the
+    // program existed, so the backend couldn't resolve their programId and
+    // saved every seeded GA with no program — making them department-wide and
+    // visible under every program in the department.
+    let created: Program | null = null;
+    const response = await fetchWithTimeout(`${BASE_URL}/programs/`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    }, 8000);
+    if (response.ok) {
+      created = await response.json();
+    } else {
+      const errData = await response.json().catch(() => ({}));
+      const msg = errData.detail || errData.error || errData.message || 'Failed to create program on server';
+      // A retry after an earlier attempt created the program but failed on a
+      // GA: carry on and finish the GAs instead of dead-ending on "exists".
+      const alreadyExists = response.status === 400 && /already exists/i.test(String(msg));
+      if (!alreadyExists) throw new Error(msg);
+    }
+
     if (associatedGAs && associatedGAs.length > 0) {
       await Promise.all(associatedGAs.map(async (ga) => {
         const gaRes = await fetchWithTimeout(`${BASE_URL}/gas/`, {
@@ -674,16 +695,14 @@ export const apiService = {
         }
       }));
     }
-    const response = await fetchWithTimeout(`${BASE_URL}/programs/`, {
-      method: 'POST',
+
+    if (created) return created;
+    const existingRes = await fetchWithTimeout(`${BASE_URL}/programs/${encodeURIComponent(data.id)}/`, {
+      method: 'GET',
       headers: getHeaders(),
-      body: JSON.stringify(data),
     }, 8000);
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.detail || errData.error || errData.message || 'Failed to create program on server');
-    }
-    return response.json();
+    if (!existingRes.ok) throw new Error('Program exists but could not be loaded from server');
+    return existingRes.json();
   },
 
   async createCourse(data: Course): Promise<Course> {
