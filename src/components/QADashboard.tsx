@@ -735,16 +735,10 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
     }
     activeGAs = [...activeGAs].sort((a, b) => naturalCompare(a.id, b.id));
 
-    if (activeGAs.length === 0) {
-      // Fallback GAs
-      activeGAs = [
-        { id: 'GA-1', name: 'Academic Grounding', description: 'Deep comprehension of fundamental computing principles.' },
-        { id: 'GA-2', name: 'Problem Analysis', description: 'Skill to identify, analyze, and solve complex challenges.' },
-        { id: 'GA-3', name: 'Design/Development of Solutions', description: 'Mastery in designing sustainable components.' },
-        { id: 'GA-4', name: 'Investigation / Research', description: 'Ability to conduct validation studies.' },
-        { id: 'GA-5', name: 'Modern Tool Usage', description: 'Competency in leveraging Git, CI/CD, and database systems.' }
-      ];
-    }
+    // No fallback list here. This used to substitute five invented attributes
+    // ("GA-1 Academic Grounding" etc.) when the department had none configured,
+    // so the report showed rows for GAs that were never defined. With no GAs
+    // the report now says so (see the empty states in the chart and table).
 
     let overallPassTotal = 0;
     let overallAssessmentsCount = 0;
@@ -3342,6 +3336,12 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                             <div className="w-full text-left">0%</div>
                           </div>
 
+                          {reportMetrics.gaMetrics.length === 0 && (
+                            <div className="relative z-10 w-full self-center text-center text-xs font-semibold text-slate-500">
+                              No Graduate Attributes are configured for this department/program yet.
+                            </div>
+                          )}
+
                           {/* Render actual bars */}
                           {reportMetrics.gaMetrics.map(metric => {
                             const passedPct = metric.percentage;
@@ -3412,6 +3412,13 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-150">
+                            {reportMetrics.gaMetrics.length === 0 && (
+                              <tr>
+                                <td colSpan={7} className="px-6 py-8 text-center text-xs font-semibold text-slate-500">
+                                  No Graduate Attributes are configured for this department/program yet. Add them before generating this report.
+                                </td>
+                              </tr>
+                            )}
                             {reportMetrics.gaMetrics.map(metric => {
                               const isAssessed = metric.totalCount > 0;
                               return (
