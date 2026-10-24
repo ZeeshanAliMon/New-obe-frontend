@@ -80,6 +80,14 @@ const formatDegreeTitle = (programName?: string | null): string => {
   return hons ? `${title} (Hons)` : title;
 };
 
+/** "Programming Fundamentals (BSCS)" -> "Programming Fundamentals", but only when
+ *  the bracketed text is a real program code — "(Lab)" etc. are left alone. */
+const stripProgramSuffix = (title: string, programCodes: Set<string>): string => {
+  const t = String(title || '').trim();
+  const m = t.match(/^(.*\S)\s*\(([^()]+)\)$/);
+  return m && programCodes.has(m[2].trim().toUpperCase()) ? m[1] : t;
+};
+
 const areStudentsEqual = (reg1: string | null | undefined, reg2: string | null | undefined): boolean => {
   if (!reg1 || !reg2) return false;
   const r1 = String(reg1).trim().toLowerCase();
@@ -1752,6 +1760,14 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
   };
 
   // Get student's enrolled courses with dynamic calculations attached
+  // Program codes that exist in the system ("BSCS", "BBA", ...), used to strip
+  // a "(BSCS)"-style suffix from course titles without touching real
+  // parentheses such as "(Lab)".
+  const programCodes = useMemo(
+    () => new Set(programs.flatMap((p: any) => [p.code, p.id]).filter(Boolean).map((c: string) => String(c).trim().toUpperCase())),
+    [programs]
+  );
+
   const enrolledCoursesWithGrades = useMemo(() => {
     const matched = (rawStudentCourses || []).map((rc: any) => {
       const globalCourse = courses.find(c => c.code?.toUpperCase() === rc.code?.toUpperCase());
@@ -1759,6 +1775,10 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
       return {
         ...globalCourse,
         ...rc,
+        // Older backends append the program code to every title
+        // ("Programming Fundamentals (BSCS)"). Strip it here so every screen and
+        // the transcript show the plain title whichever backend is running.
+        title: stripProgramSuffix(rc.title || globalCourse?.title || '', programCodes),
         results
       };
     });
@@ -1784,7 +1804,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
     });
 
     return Array.from(seen.values());
-  }, [courses, studentBindings, activeRegNo, instructorCourses, rawStudentCourses, allInstructorCoursesState]);
+  }, [courses, studentBindings, activeRegNo, instructorCourses, rawStudentCourses, allInstructorCoursesState, programCodes]);
 
   // e.g. "Bachelor of Science in Computer Science". Uses the student's own
   // program, or failing that the program of their enrolled courses (for a
