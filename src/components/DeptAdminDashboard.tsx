@@ -360,6 +360,8 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
   }, [activeDeptId]);
   const [selectedCourseCodeForStudent, setSelectedCourseCodeForStudent] = useState('');
   const [studentCourseStatuses, setStudentCourseStatuses] = useState<Record<string, Record<string, 'studied' | 'studying' | 'failed' | 'later' | 'deferred'>>>({});
+  // Semester sections open on the Student Enrollments tab; empty = only the student's current semester.
+  const [enrollOpenSemesters, setEnrollOpenSemesters] = useState<Record<string, boolean>>({});
   const [studentTab, setStudentTab] = useState<'all' | 'studying' | 'failed' | 'studied' | 'deferred'>('all');
   const [expandedSemesters, setExpandedSemesters] = useState<Record<string, boolean>>({
     "1st": true,
@@ -2884,566 +2886,263 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
 
 
           {/* TAB 5: STUDENT ENROLLMENTS */}
-          {activeTab === 'student-enrollment' && (
-            <div className="space-y-6">
-              {/* SYSTEM LEVEL AUTOMATION BUTTON */}
-              <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
-                  <div className="space-y-1">
-                    <h2 className="text-lg font-bold text-slate-900">Auto-Enroll Registered Students</h2>
-                    <p className="text-xs text-slate-500 leading-relaxed max-w-xl">
-                      Automatically pulls the registered students database from the Admissions section and assigns them to courses corresponding exactly with their program curriculum and current study semester plans.
-                    </p>
-                  </div>
-                  <div>
-                    <button
-                      onClick={handleAutoEnrollStudents}
-                      className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl text-xs shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2.5 cursor-pointer"
-                    >
-                      <RefreshCw className="h-4.5 w-4.5" />
-                      <span>Sync & Auto-Enroll Now</span>
-                    </button>
-                  </div>
+          {activeTab === 'student-enrollment' && (() => {
+            const selStudent = selectedStudentRegNo === '' ? undefined : students.find(x => areRegNosEqual(x.regNo, selectedStudentRegNo));
+            const orderedSemestersList = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'];
+            const progPlans = selStudent ? semesterPlans.filter(p => areProgramsCompatible(p.programId, selStudent.programId)) : [];
+            const sortedPlans = [...progPlans].sort((x, y) => orderedSemestersList.indexOf(x.semester) - orderedSemestersList.indexOf(y.semester));
+            const curriculumCodes: string[] = Array.from(new Set(progPlans.flatMap(p => p.courseCodes))) as string[];
+            const matchedProg = selStudent ? programs.find(p => String(p.id).trim().toLowerCase() === String(selStudent.programId).trim().toLowerCase()) : undefined;
+
+            let studiedCount = 0, studyingCount = 0, laterCount = 0;
+            if (selStudent) {
+              curriculumCodes.forEach(code => {
+                const stat = getCourseStatus(selStudent.regNo, code);
+                if (stat === 'studied') studiedCount++;
+                else if (stat === 'studying') studyingCount++;
+                else if (stat === 'later') laterCount++;
+              });
+              studyingCount += selectedStudentCurrentCourses.filter(c => !curriculumCodes.includes(c.code)).length;
+            }
+
+            const statusBadge = (status: string) => {
+              const base = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap';
+              if (status === 'studied') return <span className={`${base} bg-blue-50 text-blue-700 border-blue-100`}><Check className="h-3 w-3" />Completed</span>;
+              if (status === 'studying') return <span className={`${base} bg-indigo-50 text-indigo-700 border-indigo-100`}><BookOpen className="h-3 w-3" />Studying</span>;
+              if (status === 'failed') return <span className={`${base} bg-red-50 text-red-700 border-red-100`}><AlertCircle className="h-3 w-3" />Failed</span>;
+              if (status === 'deferred') return <span className={`${base} bg-amber-50 text-amber-700 border-amber-100`}><Clock className="h-3 w-3" />Deferred</span>;
+              return <span className={`${base} bg-slate-100 text-slate-500 border-slate-200`}>Upcoming</span>;
+            };
+
+            const btn = 'text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer whitespace-nowrap';
+            const actionButtons = (regNo: string, code: string, status: string) => {
+              const go = (to: any) => () => updateStudentCourseStatus(regNo, code, to);
+              if (status === 'studying') return (<>
+                <button onClick={go('studied')} className={`${btn} bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-100`} title="Mark as passed">Pass</button>
+                <button onClick={go('failed')} className={`${btn} bg-red-50 hover:bg-red-100 text-red-700 border-red-100`} title="Mark as failed (needs repeat)">Fail</button>
+                <button onClick={go('deferred')} className={`${btn} bg-white hover:bg-slate-50 text-slate-600 border-slate-200`} title="Unenroll and defer to later">Drop</button>
+              </>);
+              if (status === 'failed' || status === 'deferred') return (<>
+                <button onClick={go('studying')} className={`${btn} bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600`} title="Enroll in the current term">Enroll</button>
+                <button onClick={go('studied')} className={`${btn} bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-100`} title="Mark as already passed">Mark Passed</button>
+              </>);
+              if (status === 'studied') return (<>
+                <button onClick={go('failed')} className={`${btn} bg-white hover:bg-red-50 text-red-600 border-slate-200`} title="Change status to failed">Mark Failed</button>
+                <button onClick={go('studying')} className={`${btn} bg-white hover:bg-slate-50 text-slate-600 border-slate-200`} title="Repeat course enrollment">Repeat</button>
+              </>);
+              return <button onClick={go('studying')} className={`${btn} bg-white hover:bg-slate-50 text-slate-600 border-slate-200`} title="Enroll early">Enroll Early</button>;
+            };
+
+            const courseRow = (code: string, title: string, type: string | undefined, status: string, idx: number) => (
+              <div key={`${code}-${idx}`} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-2.5 hover:bg-slate-50/60 transition-colors">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="font-mono text-xs font-bold text-indigo-700 w-16 shrink-0">{code}</span>
+                  <span className="text-sm font-medium text-slate-800 truncate" title={title}>{title}</span>
+                  {type === 'elective' && <span className="hidden md:inline text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">Elective</span>}
+                </div>
+                <div className="flex items-center gap-2 shrink-0 sm:justify-end">
+                  {statusBadge(status)}
+                  <div className="flex items-center gap-1.5">{actionButtons(selStudent!.regNo, code, status)}</div>
                 </div>
               </div>
+            );
 
-              {/* MANUAL INDIVIDUAL BINDINGS */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* LIST OF STUDENTS */}
-                <div className="lg:col-span-1 bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-4">
-                  <div>
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Student Directory</h3>
-                    <p className="text-[10px] text-slate-400">Select a student to edit manual course bindings.</p>
-                  </div>
-                  
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                    <input 
-                      type="text" 
-                      placeholder="Search student..." 
-                      value={studentSearch}
-                      onChange={(e) => setStudentSearch(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 bg-slate-50 hover:bg-slate-100/70 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-indigo-600/10 focus:border-indigo-600 rounded-xl outline-none text-xs font-medium transition-all"
-                    />
-                  </div>
+            const tabBtn = (id: 'all' | 'studying' | 'studied', label: string) => (
+              <button
+                key={id}
+                onClick={() => setStudentTab(id)}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                  studentTab === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >{label}</button>
+            );
 
-                  <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
-                    {filteredStudents.map(s => {
-                      const matchedProg = programs.find(p => String(p.id).trim().toLowerCase() === String(s.programId).trim().toLowerCase());
-                      const isSelected = selectedStudentRegNo === s.regNo;
+            return (
+            <div className="space-y-4">
+              {/* Slim header with the bulk sync action */}
+              <div className="bg-white border border-slate-200/80 rounded-2xl px-5 py-3.5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Student Enrollments</h2>
+                  <p className="text-xs text-slate-500">Auto-enroll registered students into their program's semester plan, or adjust individual students below.</p>
+                </div>
+                <button
+                  onClick={handleAutoEnrollStudents}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-xl text-sm shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  <span>Sync & Auto-Enroll</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] gap-4 items-start">
+                {/* Student list */}
+                <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden lg:sticky lg:top-4">
+                  <div className="p-3 border-b border-slate-100">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search student..."
+                        value={studentSearch}
+                        onChange={(e) => setStudentSearch(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 bg-slate-50 hover:bg-slate-100/70 border border-slate-200 focus:bg-white focus:ring-2 focus:ring-indigo-600/10 focus:border-indigo-600 rounded-xl outline-none text-sm transition-all"
+                      />
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-2 px-1">{filteredStudents.length} student{filteredStudents.length === 1 ? '' : 's'}</p>
+                  </div>
+                  <div className="max-h-[60vh] overflow-y-auto divide-y divide-slate-100">
+                    {filteredStudents.length === 0 && <p className="text-xs text-slate-400 text-center py-8">No students found.</p>}
+                    {filteredStudents.map(st => {
+                      const pr = programs.find(p => String(p.id).trim().toLowerCase() === String(st.programId).trim().toLowerCase());
+                      const isSelected = selectedStudentRegNo === st.regNo;
                       return (
                         <button
-                          key={s.regNo}
-                          onClick={() => setSelectedStudentRegNo(s.regNo)}
-                          className={`w-full text-left p-3 rounded-xl border transition-all flex flex-col gap-0.5 ${
-                            isSelected 
-                              ? 'bg-indigo-50 border-indigo-200 ring-2 ring-indigo-600/5' 
-                              : 'border-slate-150 hover:bg-slate-50 bg-slate-50/20'
+                          key={st.regNo}
+                          onClick={() => setSelectedStudentRegNo(st.regNo)}
+                          className={`w-full text-left px-4 py-2.5 transition-colors cursor-pointer border-l-2 ${
+                            isSelected ? 'bg-indigo-50 border-indigo-600' : 'border-transparent hover:bg-slate-50'
                           }`}
                         >
-                          <span className="text-xs font-bold text-slate-800">{s.name}</span>
-                          <div className="flex items-center justify-between text-[10px] text-slate-400">
-                            <span className="font-mono font-bold tracking-tight text-slate-500 uppercase">{s.regNo}</span>
-                            <span>{matchedProg?.code || s.programId.toUpperCase()} • {s.semester || '1st'}</span>
-                          </div>
+                          <p className="text-sm font-semibold text-slate-900 truncate">{st.name}</p>
+                          <p className="flex items-center justify-between text-[11px] text-slate-500 mt-0.5">
+                            <span className="font-mono">{st.regNo}</span>
+                            <span>{pr?.code || String(st.programId).toUpperCase()} • {st.semester || '1st'}</span>
+                          </p>
                         </button>
                       );
                     })}
                   </div>
                 </div>
 
-                {/* COURSE BINDING CONTROLS FOR SELECTED STUDENT */}
-                <div className="lg:col-span-2 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm">
-                  {selectedStudentRegNo === '' ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 p-8">
-                      <Users className="h-12 w-auto text-slate-300 mb-3" />
-                      <h4 className="text-xs font-bold text-slate-700">No Student Selected</h4>
-                      <p className="text-[11px] text-slate-400 max-w-xs mt-1">Please pick a student from the directory sidebar to audit or manually edit their registered courses.</p>
+                {/* Selected student */}
+                <div className="min-w-0">
+                  {!selStudent ? (
+                    <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm py-16 px-6 text-center">
+                      <Users className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                      <h4 className="text-sm font-semibold text-slate-700">No student selected</h4>
+                      <p className="text-xs text-slate-500 mt-1">Pick a student from the list to review or edit their courses.</p>
                     </div>
                   ) : (
-                    <div className="space-y-6">
-                      {/* Student Details Card */}
-                      {(() => {
-                        const s = students.find(x => areRegNosEqual(x.regNo, selectedStudentRegNo));
-                        if (!s) return null;
-                        const matchedProg = programs.find(p => String(p.id).trim().toLowerCase() === String(s.programId).trim().toLowerCase());
-                        
-                        // Get all curriculum courses for this program
-                        const progPlans = semesterPlans.filter(p => areProgramsCompatible(p.programId, s.programId));
-                        const curriculumCodes: string[] = Array.from(new Set(progPlans.flatMap(p => p.courseCodes))) as string[];
-
-                        let studiedCount = 0;
-                        let studyingCount = 0;
-                        let failedCount = 0;
-                        let deferredCount = 0;
-                        let laterCount = 0;
-
-                        curriculumCodes.forEach(code => {
-                          const stat = getCourseStatus(s.regNo, code);
-                          if (stat === 'studied') studiedCount++;
-                          else if (stat === 'studying') studyingCount++;
-                          else if (stat === 'failed') failedCount++;
-                          else if (stat === 'deferred') deferredCount++;
-                          else if (stat === 'later') laterCount++;
-                        });
-
-                        // Count additional enrolled courses outside standard curriculum
-                        const additionalEnrolled = selectedStudentCurrentCourses.filter(c => !curriculumCodes.includes(c.code));
-                        studyingCount += additionalEnrolled.length;
-
-                        return (
-                          <div className="space-y-4">
-                            <div className="bg-slate-50/50 p-5 border border-slate-200/80 rounded-2xl">
-                              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <h3 className="text-sm font-black text-slate-800">{s.name}</h3>
-                                    <span className="bg-slate-100 text-slate-600 text-[9px] font-bold px-2 py-0.5 rounded-md border border-slate-200 uppercase font-mono">{s.regNo}</span>
-                                  </div>
-                                  <p className="text-xs text-slate-500 mt-1">{matchedProg?.name || 'Undergraduate student'} • <span className="font-bold text-indigo-600">{s.semester || '1st'} Semester</span></p>
-                                </div>
-                                <div className="text-right flex flex-wrap md:flex-col gap-1.5 justify-start items-start md:items-end">
-                                  <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2.5 py-1 rounded-full border border-indigo-100">
-                                    Managed Course Load: <span className="text-xs font-black">{studyingCount}</span> Active Courses
-                                  </span>
-                                  {studyingCount > 5 && (
-                                    <span className="bg-amber-50 text-amber-700 text-[9px] font-bold px-2 py-0.5 rounded-full border border-amber-100">
-                                      ⚠️ Overloaded (&gt; 5 courses)
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Counters Panel */}
-                            <div className="grid grid-cols-3 gap-3">
-                              <div className="bg-blue-50/50 hover:bg-blue-50 border border-blue-100 rounded-xl p-3 text-center transition-all">
-                                <span className="text-[9px] font-bold text-blue-700 uppercase tracking-wider">Completed</span>
-                                <div className="text-lg font-black text-blue-800 mt-0.5">{studiedCount}</div>
-                              </div>
-                              <div className="bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-center transition-all">
-                                <span className="text-[9px] font-bold text-indigo-700 uppercase tracking-wider">Studying</span>
-                                <div className="text-lg font-black text-indigo-800 mt-0.5">{studyingCount}</div>
-                              </div>
-                              <div className="bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl p-3 text-center transition-all">
-                                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Future</span>
-                                <div className="text-lg font-black text-slate-700 mt-0.5">{laterCount}</div>
-                              </div>
-                            </div>
+                    <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
+                      {/* Student header with inline stats */}
+                      <div className="px-5 py-4 flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-slate-100">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-base font-bold text-slate-900">{selStudent.name}</h3>
+                            <span className="bg-slate-100 text-slate-600 text-[11px] font-semibold px-2 py-0.5 rounded-md font-mono">{selStudent.regNo}</span>
+                            {studyingCount > 5 && (
+                              <span className="bg-amber-50 text-amber-700 text-[11px] font-semibold px-2 py-0.5 rounded-full border border-amber-100">Overloaded ({studyingCount} courses)</span>
+                            )}
                           </div>
-                        );
-                      })()}
-
-                      {/* Add Custom Elective or Outside Course */}
-                      <div className="bg-slate-50/40 border border-slate-200 p-4 rounded-xl space-y-2.5">
-                        <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-500">Enroll in Outside / Department Elective Course</h4>
-                        <form onSubmit={handleManualBindCourse} className="flex gap-3">
-                          <select
-                            value={selectedCourseCodeForStudent}
-                            onChange={(e) => setSelectedCourseCodeForStudent(e.target.value)}
-                            className="flex-1 px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-600/10 focus:border-indigo-600 transition-all"
-                            required
-                          >
-                            <option key="placeholder-choose-course" value="">Choose Course...</option>
-                            {availableCoursesForSelectedStudent.map((c, idx) => {
-                              const progObj = programs.find(p => String(p.id).trim().toLowerCase() === String(c.programId).trim().toLowerCase());
-                              const progLabel = progObj ? progObj.code.toUpperCase() : 'Common';
-                              return (
-                                <option key={`${c.id || c.code}-${idx}`} value={c.code}>
-                                  {c.code} — {c.title} ({c.type}) [{progLabel}]
-                                </option>
-                              );
-                            })}
-                          </select>
-                          <button
-                            type="submit"
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5 shrink-0 cursor-pointer"
-                          >
-                            <Plus className="h-4 w-4" />
-                            <span>Enroll</span>
-                          </button>
-                        </form>
+                          <p className="text-xs text-slate-500 mt-0.5">{matchedProg?.name || 'Undergraduate student'} • <span className="font-semibold text-indigo-600">{selStudent.semester || '1st'} Semester</span></p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {[['Completed', studiedCount, 'text-blue-700 bg-blue-50 border-blue-100'], ['Studying', studyingCount, 'text-indigo-700 bg-indigo-50 border-indigo-100'], ['Upcoming', laterCount, 'text-slate-700 bg-slate-50 border-slate-200']].map(([label, n, cls]) => (
+                            <div key={label as string} className={`min-w-[84px] px-3 py-1.5 rounded-xl border text-center ${cls}`}>
+                              <div className="text-base font-bold leading-tight">{n as number}</div>
+                              <div className="text-[10px] font-semibold uppercase tracking-wider opacity-80">{label}</div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
 
-                      {/* Filter Sub-Tabs */}
-                      <div className="flex border-b border-slate-200 gap-1 overflow-x-auto pb-1.5">
-                        <button
-                          onClick={() => setStudentTab('all')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
-                            studentTab === 'all' 
-                              ? 'bg-slate-900 text-white shadow-xs' 
-                              : 'text-slate-600 hover:bg-slate-100'
-                          }`}
+                      {/* Elective / outside course, one row */}
+                      <form onSubmit={handleManualBindCourse} className="px-5 py-3 bg-slate-50/60 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center gap-2.5">
+                        <label className="text-xs font-semibold text-slate-600 shrink-0">Add elective / outside course</label>
+                        <select
+                          value={selectedCourseCodeForStudent}
+                          onChange={(e) => setSelectedCourseCodeForStudent(e.target.value)}
+                          className="flex-1 min-w-0 px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 outline-none focus:ring-2 focus:ring-indigo-600/10 focus:border-indigo-600 transition-all"
+                          required
                         >
-                          📋 All Curriculum
+                          <option key="placeholder-choose-course" value="">Choose course...</option>
+                          {availableCoursesForSelectedStudent.map((c, idx) => {
+                            const progObj = programs.find(p => String(p.id).trim().toLowerCase() === String(c.programId).trim().toLowerCase());
+                            const progLabel = progObj ? progObj.code.toUpperCase() : 'Common';
+                            return (
+                              <option key={`${c.id || c.code}-${idx}`} value={c.code}>
+                                {c.code} — {c.title} ({c.type}) [{progLabel}]
+                              </option>
+                            );
+                          })}
+                        </select>
+                        <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-xl text-sm transition-all shadow-sm flex items-center justify-center gap-1.5 shrink-0 cursor-pointer">
+                          <Plus className="h-4 w-4" />
+                          <span>Enroll</span>
                         </button>
-                        <button
-                          onClick={() => setStudentTab('studying')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                            studentTab === 'studying' 
-                              ? 'bg-indigo-600 text-white shadow-xs' 
-                              : 'text-slate-600 hover:bg-slate-100'
-                          }`}
-                        >
-                          <BookOpen className="h-3.5 w-3.5" />
-                          Studying Now
-                        </button>
-                        <button
-                          onClick={() => setStudentTab('studied')}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                            studentTab === 'studied' 
-                              ? 'bg-blue-600 text-white shadow-xs' 
-                              : 'text-slate-600 hover:bg-slate-100'
-                          }`}
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          Completed
-                        </button>
+                      </form>
+
+                      {/* View switch */}
+                      <div className="px-5 pt-3">
+                        <div className="inline-flex bg-slate-100 rounded-xl p-1 gap-0.5">
+                          {tabBtn('all', 'All Curriculum')}
+                          {tabBtn('studying', 'Studying Now')}
+                          {tabBtn('studied', 'Completed')}
+                        </div>
                       </div>
 
-                      {/* Course Catalog List Display */}
-                      <div className="space-y-4">
-                        {(() => {
-                          const s = students.find(x => areRegNosEqual(x.regNo, selectedStudentRegNo));
-                          if (!s) return null;
-
-                          const progPlans = semesterPlans.filter(p => areProgramsCompatible(p.programId, s.programId));
-                          const curriculumCodes = Array.from(new Set(progPlans.flatMap(p => p.courseCodes))) as string[];
-                          const orderedSemestersList = ["1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th"];
-                          
-                          // Sort semester plans in typical ordered list
-                          const sortedPlans = progPlans.sort((a, b) => orderedSemestersList.indexOf(a.semester) - orderedSemestersList.indexOf(b.semester));
-
-                          // If showing filtered tabs (e.g. Failed, Studying, etc.)
-                          if (studentTab !== 'all') {
+                      {/* Course list: scrolls inside the card so the page itself stays short */}
+                      <div className="px-5 py-3">
+                        <div className="max-h-[52vh] overflow-y-auto rounded-xl border border-slate-200">
+                          {studentTab !== 'all' ? (() => {
                             const filteredCourses = courses.filter(c => {
-                              // The course must be in the student's program's curriculum OR explicitly enrolled/studied
                               const inCurriculum = curriculumCodes.includes(c.code);
                               const isEnrolled = studentBindings.some(
-                                b => areRegNosEqual(b.studentRegNo, s.regNo) && 
+                                b => areRegNosEqual(b.studentRegNo, selStudent.regNo) &&
                                      normalizeCourseCode(b.courseCode) === normalizeCourseCode(c.code)
                               );
                               if (!inCurriculum && !isEnrolled) return false;
-                              
-                              const stat = getCourseStatus(s.regNo, c.code);
-                              return stat === studentTab;
+                              return getCourseStatus(selStudent.regNo, c.code) === studentTab;
                             });
-
                             if (filteredCourses.length === 0) {
-                              return (
-                                <div className="text-center py-10 text-slate-400 border border-dashed border-slate-200 rounded-2xl text-xs font-medium bg-slate-50/50">
-                                  No courses found with status "{studentTab.toUpperCase()}" for this student.
-                                </div>
-                              );
+                              return <p className="text-center py-10 text-xs text-slate-500">No {studentTab === 'studying' ? 'courses currently being studied' : 'completed courses'} for this student.</p>;
                             }
-
-                            return (
-                              <div className="space-y-2.5">
-                                {filteredCourses.map((c, idx) => {
-                                  const status = getCourseStatus(s.regNo, c.code);
+                            return <div className="divide-y divide-slate-100">{filteredCourses.map((c, idx) => courseRow(c.code, c.title, c.type, getCourseStatus(selStudent.regNo, c.code), idx))}</div>;
+                          })() : (
+                            sortedPlans.length === 0 ? (
+                              <p className="text-center py-10 text-xs text-slate-500">No semester plan found for this student's program.</p>
+                            ) : (
+                              <div className="divide-y divide-slate-200">
+                                {sortedPlans.map(plan => {
+                                  // The student's current semester is open by default; the rest stay collapsed.
+                                  const isExpanded = enrollOpenSemesters[plan.semester] ?? (plan.semester === (selStudent.semester || '1st'));
                                   return (
-                                    <div 
-                                      key={`${c.id}-${idx}`}
-                                      className="bg-white border border-slate-200 p-3.5 rounded-xl shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-slate-300 transition-all"
-                                    >
-                                      <div>
-                                        <div className="flex items-center gap-2 mb-1">
-                                          <span className="font-mono text-[10px] font-black text-indigo-600 uppercase">{c.code}</span>
-                                          <span className={`text-[9px] font-bold px-1.5 rounded-full capitalize ${
-                                            c.type === 'core' ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-600'
-                                          }`}>
-                                            {c.type}
-                                          </span>
+                                    <div key={plan.semester}>
+                                      <button
+                                        onClick={() => setEnrollOpenSemesters({ ...enrollOpenSemesters, [plan.semester]: !isExpanded })}
+                                        className="w-full bg-slate-50 hover:bg-slate-100/70 px-4 py-2.5 flex items-center justify-between text-left transition-colors cursor-pointer"
+                                      >
+                                        <span className="flex items-center gap-2">
+                                          <span className="text-sm font-semibold text-slate-800">{plan.semester} Semester</span>
+                                          <span className="text-[11px] text-slate-500">{plan.courseCodes.length} courses</span>
+                                        </span>
+                                        {isExpanded ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                                      </button>
+                                      {isExpanded && (
+                                        <div className="divide-y divide-slate-100 bg-white">
+                                          {plan.courseCodes.map((code, idx) => {
+                                            const planProgClean = plan.programId ? String(plan.programId).trim().toLowerCase() : '';
+                                            const cObj = courses.find(c => c.code === code && (!planProgClean || String(c.programId).trim().toLowerCase() === planProgClean)) || courses.find(c => c.code === code);
+                                            if (!cObj) return null;
+                                            return courseRow(code, cObj.title, cObj.type, getCourseStatus(selStudent.regNo, code), idx);
+                                          })}
                                         </div>
-                                        <h5 className="text-xs font-black text-slate-800">{c.title}</h5>
-                                      </div>
-
-                                      <div className="flex items-center gap-2">
-                                        {/* Status actions */}
-                                        {status === 'studying' && (
-                                          <div className="flex items-center gap-1.5">
-                                            <button
-                                              onClick={() => updateStudentCourseStatus(s.regNo, c.code, 'studied')}
-                                              className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-blue-150 transition-all flex items-center gap-1 cursor-pointer"
-                                              title="Mark course as successfully passed"
-                                            >
-                                              <Check className="h-3 w-3" />
-                                              <span>Pass</span>
-                                            </button>
-                                            <button
-                                              onClick={() => updateStudentCourseStatus(s.regNo, c.code, 'failed')}
-                                              className="bg-red-50 hover:bg-red-100 text-red-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-red-150 transition-all flex items-center gap-1 cursor-pointer"
-                                              title="Mark course as failed (needs repeat)"
-                                            >
-                                              <AlertCircle className="h-3 w-3" />
-                                              <span>Fail</span>
-                                            </button>
-                                            <button
-                                              onClick={() => updateStudentCourseStatus(s.regNo, c.code, 'deferred')}
-                                              className="bg-slate-50 hover:bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-1 rounded-lg border border-slate-200 transition-all flex items-center gap-1 cursor-pointer"
-                                              title="Unenroll and defer to later"
-                                            >
-                                              <Unlink className="h-3 w-3" />
-                                              <span>Drop</span>
-                                            </button>
-                                          </div>
-                                        )}
-
-                                        {status === 'failed' && (
-                                          <div className="flex items-center gap-1.5">
-                                            <button
-                                              onClick={() => updateStudentCourseStatus(s.regNo, c.code, 'studying')}
-                                              className="bg-indigo-600 hover:bg-indigo-750 text-white text-[10px] font-bold px-3 py-1 rounded-lg transition-all flex items-center gap-1 shadow-sm cursor-pointer"
-                                              title="Enroll student in current semester as backlog repeat"
-                                            >
-                                              <Plus className="h-3 w-3" />
-                                              <span>Enroll Now</span>
-                                            </button>
-                                            <button
-                                              onClick={() => updateStudentCourseStatus(s.regNo, c.code, 'studied')}
-                                              className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-blue-150 transition-all cursor-pointer"
-                                              title="Mark course as passed/completed"
-                                            >
-                                              <span>Mark Passed</span>
-                                            </button>
-                                          </div>
-                                        )}
-
-                                        {status === 'deferred' && (
-                                          <div className="flex items-center gap-1.5">
-                                            <button
-                                              onClick={() => updateStudentCourseStatus(s.regNo, c.code, 'studying')}
-                                              className="bg-indigo-600 hover:bg-indigo-750 text-white text-[10px] font-bold px-3 py-1 rounded-lg transition-all flex items-center gap-1 shadow-sm cursor-pointer"
-                                              title="Enroll in current term studying schedule"
-                                            >
-                                              <Plus className="h-3 w-3" />
-                                              <span>Enroll Now</span>
-                                            </button>
-                                            <button
-                                              onClick={() => updateStudentCourseStatus(s.regNo, c.code, 'studied')}
-                                              className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-blue-150 transition-all cursor-pointer"
-                                              title="Mark as already completed"
-                                            >
-                                              <span>Mark Passed</span>
-                                            </button>
-                                          </div>
-                                        )}
-
-                                        {status === 'studied' && (
-                                          <div className="flex items-center gap-1.5">
-                                            <button
-                                              onClick={() => updateStudentCourseStatus(s.regNo, c.code, 'failed')}
-                                              className="bg-red-50 hover:bg-red-100 text-red-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-red-150 transition-all cursor-pointer"
-                                              title="Change status to failed backlog"
-                                            >
-                                              <span>Mark Failed</span>
-                                            </button>
-                                            <button
-                                              onClick={() => updateStudentCourseStatus(s.regNo, c.code, 'studying')}
-                                              className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-slate-300 transition-all cursor-pointer"
-                                              title="Repeat course enrollment"
-                                            >
-                                              <span>Enroll (Repeat)</span>
-                                            </button>
-                                          </div>
-                                        )}
-                                      </div>
+                                      )}
                                     </div>
                                   );
                                 })}
                               </div>
-                            );
-                          }
-
-                          // General "All Curriculum" View - grouped by curriculum semesters
-                          return (
-                            <div className="space-y-4">
-                              {sortedPlans.map(plan => {
-                                const isExpanded = expandedSemesters[plan.semester] !== false;
-                                return (
-                                  <div 
-                                    key={plan.semester} 
-                                    className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs"
-                                  >
-                                    {/* Semester header row */}
-                                    <button
-                                      onClick={() => setExpandedSemesters({
-                                        ...expandedSemesters,
-                                        [plan.semester]: !isExpanded
-                                      })}
-                                      className="w-full bg-slate-50/55 hover:bg-slate-50 px-4 py-3 border-b border-slate-200/80 flex items-center justify-between text-left transition-all"
-                                    >
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-xs font-black text-slate-800">{plan.semester} Semester Plan</span>
-                                        <span className="bg-slate-200/60 text-slate-600 text-[9px] font-bold px-2 py-0.5 rounded-full border border-slate-200">
-                                          {plan.courseCodes.length} Courses
-                                        </span>
-                                      </div>
-                                      <div>
-                                        {isExpanded ? (
-                                          <ChevronUp className="h-4 w-4 text-slate-400" />
-                                        ) : (
-                                          <ChevronDown className="h-4 w-4 text-slate-400" />
-                                        )}
-                                      </div>
-                                    </button>
-
-                                    {/* Expandable courses list */}
-                                    {isExpanded && (
-                                      <div className="p-4 space-y-3.5 divide-y divide-slate-100 bg-white">
-                                        {plan.courseCodes.map((code, idx) => {
-                                          const planProgClean = plan.programId ? String(plan.programId).trim().toLowerCase() : '';
-                                          const cObj = courses.find(c => c.code === code && (!planProgClean || String(c.programId).trim().toLowerCase() === planProgClean)) || courses.find(c => c.code === code);
-                                          const status = getCourseStatus(s.regNo, code);
-                                          if (!cObj) return null;
-
-                                          return (
-                                            <div 
-                                              key={`${code}-${idx}`} 
-                                              className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3.5 ${idx === 0 ? 'pt-0' : ''}`}
-                                            >
-                                              <div>
-                                                <div className="flex items-center gap-2 mb-1">
-                                                  <span className="font-mono text-[10px] font-black text-indigo-600 uppercase">{code}</span>
-                                                  
-                                                  {/* Status badge */}
-                                                  {status === 'studied' && (
-                                                    <span className="bg-blue-50 text-blue-700 text-[9px] font-bold px-2 py-0.5 rounded-full border border-blue-100 flex items-center gap-0.5">
-                                                      <Check className="h-2.5 w-2.5" /> Completed
-                                                    </span>
-                                                  )}
-                                                  {status === 'studying' && (
-                                                    <span className="bg-indigo-50 text-indigo-700 text-[9px] font-bold px-2 py-0.5 rounded-full border border-indigo-150 flex items-center gap-0.5">
-                                                      <BookOpen className="h-2.5 w-2.5" /> Studying Now
-                                                    </span>
-                                                  )}
-                                                  {status === 'failed' && (
-                                                    <span className="bg-red-50 text-red-700 text-[9px] font-bold px-2 py-0.5 rounded-full border border-red-100 flex items-center gap-0.5">
-                                                      <AlertCircle className="h-2.5 w-2.5" /> Failed / Backlog
-                                                    </span>
-                                                  )}
-                                                  {status === 'deferred' && (
-                                                    <span className="bg-amber-50 text-amber-700 text-[9px] font-bold px-2 py-0.5 rounded-full border border-amber-100 flex items-center gap-0.5">
-                                                      <Clock className="h-2.5 w-2.5" /> Deferred
-                                                    </span>
-                                                  )}
-                                                  {status === 'later' && (
-                                                    <span className="bg-slate-100 text-slate-500 text-[9px] font-bold px-2 py-0.5 rounded-full border border-slate-200">
-                                                      Future Sem
-                                                    </span>
-                                                  )}
-                                                </div>
-                                                <h5 className="text-xs font-black text-slate-800">{cObj.title}</h5>
-                                              </div>
-
-                                              {/* Actions column */}
-                                              <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-center">
-                                                {status === 'studying' && (
-                                                  <>
-                                                    <button
-                                                      onClick={() => updateStudentCourseStatus(s.regNo, code, 'studied')}
-                                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-[9px] font-bold px-2 py-1 rounded-lg border border-blue-150 transition-all flex items-center gap-0.5 cursor-pointer"
-                                                      title="Mark as passed"
-                                                    >
-                                                      <Check className="h-2.5 w-2.5" /> Pass
-                                                    </button>
-                                                    <button
-                                                      onClick={() => updateStudentCourseStatus(s.regNo, code, 'failed')}
-                                                      className="bg-red-50 hover:bg-red-100 text-red-700 text-[9px] font-bold px-2 py-1 rounded-lg border border-red-150 transition-all flex items-center gap-0.5 cursor-pointer"
-                                                      title="Mark as failed"
-                                                    >
-                                                      <AlertCircle className="h-2.5 w-2.5" /> Fail
-                                                    </button>
-                                                    <button
-                                                      onClick={() => updateStudentCourseStatus(s.regNo, code, 'deferred')}
-                                                      className="bg-slate-50 hover:bg-slate-100 text-slate-500 text-[9px] font-bold px-2 py-1 rounded-lg border border-slate-200 transition-all cursor-pointer"
-                                                      title="Unenroll/Drop course"
-                                                    >
-                                                      Drop
-                                                    </button>
-                                                  </>
-                                                )}
-
-                                                {status === 'failed' && (
-                                                  <>
-                                                    <button
-                                                      onClick={() => updateStudentCourseStatus(s.regNo, code, 'studying')}
-                                                      className="bg-indigo-600 hover:bg-indigo-750 text-white text-[9px] font-black px-2.5 py-1 rounded-lg shadow-xs transition-all flex items-center gap-0.5 cursor-pointer"
-                                                      title="Enroll backlog in current term"
-                                                    >
-                                                      <Plus className="h-2.5 w-2.5" /> Enroll Now
-                                                    </button>
-                                                    <button
-                                                      onClick={() => updateStudentCourseStatus(s.regNo, code, 'studied')}
-                                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-[9px] font-bold px-2 py-1 rounded-lg border border-blue-150 transition-all cursor-pointer"
-                                                    >
-                                                      Mark Passed
-                                                    </button>
-                                                  </>
-                                                )}
-
-                                                {status === 'deferred' && (
-                                                  <>
-                                                    <button
-                                                      onClick={() => updateStudentCourseStatus(s.regNo, code, 'studying')}
-                                                      className="bg-indigo-600 hover:bg-indigo-750 text-white text-[9px] font-black px-2.5 py-1 rounded-lg shadow-xs transition-all flex items-center gap-0.5 cursor-pointer"
-                                                    >
-                                                      <Plus className="h-2.5 w-2.5" /> Enroll Now
-                                                    </button>
-                                                    <button
-                                                      onClick={() => updateStudentCourseStatus(s.regNo, code, 'studied')}
-                                                      className="bg-blue-50 hover:bg-blue-100 text-blue-700 text-[9px] font-bold px-2 py-1 rounded-lg border border-blue-150 transition-all cursor-pointer"
-                                                    >
-                                                      Mark Passed
-                                                    </button>
-                                                  </>
-                                                )}
-
-                                                {status === 'studied' && (
-                                                  <>
-                                                    <button
-                                                      onClick={() => updateStudentCourseStatus(s.regNo, code, 'failed')}
-                                                      className="bg-red-50 hover:bg-red-100 text-red-700 text-[9px] font-bold px-2 py-1 rounded-lg border border-red-150 transition-all cursor-pointer"
-                                                    >
-                                                      Mark Failed
-                                                    </button>
-                                                    <button
-                                                      onClick={() => updateStudentCourseStatus(s.regNo, code, 'studying')}
-                                                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[9px] font-bold px-2 py-1 rounded-lg border border-slate-200 transition-all cursor-pointer"
-                                                    >
-                                                      Repeat
-                                                    </button>
-                                                  </>
-                                                )}
-
-                                                {status === 'later' && (
-                                                  <button
-                                                    onClick={() => updateStudentCourseStatus(s.regNo, code, 'studying')}
-                                                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[9px] font-bold px-2.5 py-1 rounded-lg border border-slate-200 transition-all flex items-center gap-0.5 cursor-pointer"
-                                                    title="Enroll early"
-                                                  >
-                                                    <Plus className="h-2.5 w-2.5" /> Enroll Early
-                                                  </button>
-                                                )}
-                                              </div>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })()}
+                            )
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
                 </div>
               </div>
             </div>
-          )}
+            );
+          })()}
 
         </section>
       </main>
