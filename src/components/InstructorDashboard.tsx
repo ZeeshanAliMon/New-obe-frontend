@@ -49,6 +49,7 @@ import MarksEntrySpreadsheet from './MarksEntrySpreadsheet';
 import html2pdf from 'html2pdf.js';
 import { toJpeg } from 'html-to-image';
 import { jsPDF } from 'jspdf';
+import { DEFAULT_CUSTOM_GRADES, getLetterGrade, parsePercentRange, getCourseLetterGrade, computeCourseAggregate } from '../utils/grading';
 
 const areRegNosEqual = (reg1: string | null | undefined, reg2: string | null | undefined): boolean => {
   if (!reg1 || !reg2) return false;
@@ -97,15 +98,6 @@ export const formatGACodeToStandard = (id: string): string => {
   return id;
 };
 
-const DEFAULT_CUSTOM_GRADES = [
-  { grade: 'A', percentage: '88% - 100%', points: '4' },
-  { grade: 'B+', percentage: '81% - 87%', points: '3.5' },
-  { grade: 'B', percentage: '74% - 80%', points: '3' },
-  { grade: 'C+', percentage: '67% - 73%', points: '2.5' },
-  { grade: 'C', percentage: '60% - 66%', points: '2' },
-  { grade: 'F', percentage: 'Below 60%', points: '0' },
-];
-
 // Precise score extractor returning 0 by default, dynamically aggregating question marks if defined
 export const getStudentMark = (
   student: CourseStudent,
@@ -131,86 +123,6 @@ export const getStudentMark = (
   return 0; // No dummy data, instructor must enter student marks
 };
 
-// Safe and accurate Iqra letter grade lookup
-export const getLetterGrade = (marks: number): string => {
-  if (marks >= 88) return 'A';
-  if (marks >= 81) return 'B+';
-  if (marks >= 74) return 'B';
-  if (marks >= 67) return 'C+';
-  if (marks >= 60) return 'C';
-  return 'F';
-};
-
-// Safe parser for student ranges formatted like "X% - Y%" or "Below X%"
-export const parsePercentRange = (pctStr: string): { min: number; max: number } => {
-  if (!pctStr) return { min: 0, max: 0 };
-  const clean = pctStr.replace(/%/g, '').trim();
-  if (clean.toLowerCase().includes('below')) {
-    const val = parseInt(clean.replace(/below/i, '').trim(), 10);
-    return { min: 0, max: isNaN(val) ? 0 : val };
-  }
-  const parts = clean.split(/[-–to]/);
-  if (parts.length === 2) {
-    const minVal = parseInt(parts[0].trim(), 10);
-    const maxVal = parseInt(parts[1].trim(), 10);
-    return {
-      min: isNaN(minVal) ? 0 : minVal,
-      max: isNaN(maxVal) ? 0 : maxVal
-    };
-  }
-  const single = parseInt(clean, 10);
-  return { min: isNaN(single) ? 0 : single, max: isNaN(single) ? 0 : single };
-};
-
-// Dynamic grade computer that respects course active evaluation system
-export const getCourseLetterGrade = (marks: number, course?: any): string => {
-  if (!course) return getLetterGrade(marks);
-
-  const system = course.selectedGradingSystem || 'ready1';
-  
-  if (system === 'ready1') {
-    return getLetterGrade(marks);
-  }
-
-  if (system === 'ready2') {
-    if (marks >= 90) return 'A+';
-    if (marks >= 85) return 'A';
-    if (marks >= 80) return 'A-';
-    if (marks >= 75) return 'B+';
-    if (marks >= 70) return 'B';
-    if (marks >= 65) return 'B-';
-    if (marks >= 60) return 'C+';
-    if (marks >= 55) return 'C';
-    if (marks >= 50) return 'D';
-    return 'F';
-  }
-  
-  if (system === 'custom') {
-    const list = course.customGradingSystem || DEFAULT_CUSTOM_GRADES;
-    // Look through defined ranges
-    for (const tier of list) {
-      const range = parsePercentRange(tier.percentage);
-      if (marks >= range.min && marks <= range.max) {
-        return tier.grade;
-      }
-    }
-    // Simple fallback using sorted list
-    const sorted = [...list].sort((a, b) => {
-      const rA = parsePercentRange(a.percentage);
-      const rB = parsePercentRange(b.percentage);
-      return rA.min - rB.min;
-    });
-    if (sorted.length > 0) {
-      const lowestRange = parsePercentRange(sorted[0].percentage);
-      if (marks < lowestRange.min) return 'F';
-      
-      const highestRange = parsePercentRange(sorted[sorted.length - 1].percentage);
-      if (marks > highestRange.max) return sorted[sorted.length - 1].grade;
-    }
-  }
-  
-  return getLetterGrade(marks);
-};
 
 // High-fidelity cell input with focus controls, constraint capping, and zero/fail red text styling
 export function CellInput({
@@ -906,50 +818,10 @@ const MarksheetDocument = ({
   const totalMaxWeight = activeCats.reduce((sum, cat) => sum + cat.percentage, 0);
 
   const studentTotalGrades = course.students.map(std => {
-    let aggregate = 0;
-    const categoryContributions: Record<string, number> = {};
+    // Shared with the Student Dashboard (utils/grading.ts) so both always show
+    // the same total and grade for the same marks.
+    const { aggregate, categoryContributions } = computeCourseAggregate(course, std.marks);
 
-    activeCats.forEach(cat => {
-      let totalMaxMarks = 0;
-      let studentObtainedSum = 0;
-      const existingUnits = course.unitsData[cat.name] || [];
-
-      if (cat.units > 0) {
-        for (let u = 1; u <= cat.units; u++) {
-          const matchingUnit = existingUnits.find(unit => unit.unitNo === u);
-          const questions = matchingUnit?.questions || [];
-
-          if (questions.length > 0) {
-            questions.forEach(q => {
-              totalMaxMarks += q.maxMarks || 0;
-              const qKey = `q-${cat.name}-${u}-${q.id}`;
-              const dKey = `${cat.name}-${u}`;
-              const val = std.marks?.[qKey];
-              if (val !== undefined && Number(val) > 0) {
-                studentObtainedSum += Number(val);
-              } else if (questions.length === 1) {
-                studentObtainedSum += Number(std.marks?.[dKey] || 0);
-              } else {
-                studentObtainedSum += Number(val || 0);
-              }
-            });
-          } else {
-            const maxMarks = matchingUnit ? matchingUnit.totalMarks : 10;
-            totalMaxMarks += maxMarks;
-            const dKey = `${cat.name}-${u}`;
-            studentObtainedSum += Number(std.marks?.[dKey] || 0);
-          }
-        }
-      }
-
-      const catContribution = totalMaxMarks > 0
-        ? (studentObtainedSum / totalMaxMarks) * cat.percentage
-        : 0;
-
-      categoryContributions[cat.name] = catContribution;
-      aggregate += catContribution;
-    });
-    
     const letterGrade = getCourseLetterGrade(aggregate, course);
     return {
       student: std,

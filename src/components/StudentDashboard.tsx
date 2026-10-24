@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { Student, Course, Program, Department, InstructorCourse, GA } from '../types';
 import { apiService } from '../services/apiService';
+import { buildStudentMarkKeys, computeCourseAggregate, getCourseLetterGrade } from '../utils/grading';
 
 const normalizeRegNo = (reg: string) => {
   if (!reg) return '';
@@ -1561,60 +1562,13 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
           }
         }
 
-        const combinedMarks = {
-          ...studentObeMarks,
-          ...(matchedStudentInIC.marks || {})
-        };
-
-        let aggregate = 0;
-        let activeCats = (matchedIC.categories || []).filter((cat: any) => cat.percentage > 0);
-        let hasRealMarks = false;
-        let gradedWeightSum = 0;
-
-        activeCats.forEach((cat: any) => {
-          if (cat.units > 0) {
-            let catHasAnyMarks = false;
-            let studentObtainedSum = 0;
-            let totalMaxMarks = 0;
-
-            for (let u = 1; u <= cat.units; u++) {
-              const matchingUnit = (matchedIC.unitsData?.[cat.name] || []).find((un: any) => un.unitNo === u);
-              const questions = matchingUnit?.questions || [];
-
-              if (questions.length > 0) {
-                questions.forEach((q: any) => {
-                  totalMaxMarks += q.maxMarks || 0;
-                  const qIdStr = String(q.id).trim().toLowerCase();
-                  const markExists = Object.keys(combinedMarks).some(k => {
-                    const kLower = k.toLowerCase();
-                    return kLower === qIdStr || kLower.endsWith(`-${qIdStr}`) || kLower === `q-${qIdStr}` || kLower.includes(`-${qIdStr}-`) || kLower.includes(`_${qIdStr}`);
-                  });
-                  if (markExists) {
-                    studentObtainedSum += getFuzzyStudentMark(combinedMarks, cat.name, u, q.id);
-                    catHasAnyMarks = true;
-                  }
-                });
-              } else {
-                const maxMarks = matchingUnit ? matchingUnit.totalMarks : 10;
-                totalMaxMarks += maxMarks;
-                const dKey = `${cat.name}-${u}`;
-                const dKeyLower = dKey.toLowerCase();
-                const markExists = Object.keys(combinedMarks).some(k => k.toLowerCase() === dKeyLower || k.toLowerCase().replace(/[^a-z0-9]/g, '') === dKeyLower.replace(/[^a-z0-9]/g, ''));
-                if (markExists) {
-                  studentObtainedSum += getFuzzyStudentMark(combinedMarks, cat.name, u);
-                  catHasAnyMarks = true;
-                }
-              }
-            }
-
-            if (catHasAnyMarks && totalMaxMarks > 0) {
-              const catContribution = (studentObtainedSum / totalMaxMarks) * cat.percentage;
-              aggregate += catContribution;
-              hasRealMarks = true;
-              gradedWeightSum += cat.percentage;
-            }
-          }
-        });
+        // Same calculation as the instructor's official mark sheet (utils/grading.ts).
+        // This used to be a separate fuzzy-matching implementation that skipped
+        // unit-level marks or counted a unit total once per question, so the
+        // student could see a different grade from the one on the mark sheet.
+        const sharedMarks = buildStudentMarkKeys(matchedStudentInIC.marks || {}, studentObeMarks, matchedIC);
+        const { aggregate } = computeCourseAggregate(matchedIC, sharedMarks);
+        const hasRealMarks = Object.keys(sharedMarks).length > 0;
 
         const isCourseClosed = matchedIC?.status === 'closed' || matchedIC?.isClosed || course?.status === 'closed' || course?.isClosed || !!matchedTranscript;
 
@@ -1622,43 +1576,14 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
           finalAggregate = Number(aggregate.toFixed(1));
 
           const system = matchedIC.selectedGradingSystem || 'ready1';
-          if (system === 'ready1') {
-            if (finalAggregate >= 88) finalGrade = 'A';
-            else if (finalAggregate >= 81) finalGrade = 'B+';
-            else if (finalAggregate >= 74) finalGrade = 'B';
-            else if (finalAggregate >= 67) finalGrade = 'C+';
-            else if (finalAggregate >= 60) finalGrade = 'C';
-            else finalGrade = isCourseClosed ? 'F' : 'Pending';
-          } else if (system === 'ready2') {
-            if (finalAggregate >= 90) finalGrade = 'A+';
-            else if (finalAggregate >= 85) finalGrade = 'A';
-            else if (finalAggregate >= 80) finalGrade = 'A-';
-            else if (finalAggregate >= 75) finalGrade = 'B+';
-            else if (finalAggregate >= 70) finalGrade = 'B';
-            else if (finalAggregate >= 65) finalGrade = 'B-';
-            else if (finalAggregate >= 60) finalGrade = 'C+';
-            else if (finalAggregate >= 55) finalGrade = 'C';
-            else if (finalAggregate >= 50) finalGrade = 'D';
-            else finalGrade = isCourseClosed ? 'F' : 'Pending';
-          } else if (system === 'custom') {
-            const list = matchedIC.customGradingSystem || [];
-            let matchedGrade = isCourseClosed ? 'F' : 'Pending';
-            const sorted = [...list].sort((a, b) => parseFloat(b.threshold || '0') - parseFloat(a.threshold || '0'));
-            for (const t of sorted) {
-              if (finalAggregate >= parseFloat(t.threshold || '0')) {
-                matchedGrade = t.grade;
-                break;
-              }
-            }
-            finalGrade = matchedGrade;
-          } else {
-            if (finalAggregate >= 88) finalGrade = 'A';
-            else if (finalAggregate >= 81) finalGrade = 'B+';
-            else if (finalAggregate >= 74) finalGrade = 'B';
-            else if (finalAggregate >= 67) finalGrade = 'C+';
-            else if (finalAggregate >= 60) finalGrade = 'C';
-            else finalGrade = isCourseClosed ? 'F' : 'Pending';
-          }
+          // Grade the EXACT total, as the mark sheet does. Grading the 1-decimal
+          // display value let 73.96 round to 74.0 and become B on this screen
+          // while the sheet said C+. Same grade table as the sheet, too: the old
+          // custom branch read a `threshold` field that custom tables don't have.
+          const sheetGrade = getCourseLetterGrade(aggregate, matchedIC);
+          // Below the pass mark on a course still in progress reads "Pending"
+          // here rather than F (unchanged behaviour).
+          finalGrade = (sheetGrade === 'F' && !isCourseClosed) ? 'Pending' : sheetGrade;
 
           // Compute grade points
           if (finalGrade === 'Pending') {
@@ -2349,32 +2274,30 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
 
       if (matchedStudentInIC && matchedStudentInIC.marks) {
         const activeCats = (matchedIC.categories || course.categories || []).filter((cat: any) => cat.percentage > 0);
-        
+
         if (activeCats.length > 0) {
+          // Per-category scores from the same calculation as the instructor's
+          // mark sheet (utils/grading.ts), so the breakdown adds up to the total
+          // and grade shown above it. This used to be a third implementation
+          // whose lookup returned the whole unit total for every question.
+          const breakdownCourse = {
+            ...matchedIC,
+            categories: matchedIC.categories || course.categories || [],
+            unitsData: Object.fromEntries(activeCats.map((cat: any) => [
+              cat.name,
+              matchedIC.unitsData?.[cat.name] || course.unitsData?.[cat.name] || [],
+            ])),
+          };
+          const keyedObe = matchedIC.obeMarks || matchedIC.obe_marks;
+          const obeKey = keyedObe ? Object.keys(keyedObe).find((k: string) => areStudentsEqual(k, stdRegNo)) : undefined;
+          const breakdownObe = obeKey ? keyedObe[obeKey] : (course.obeMarks || course.obe_marks || {});
+          const { categoryContributions } = computeCourseAggregate(
+            breakdownCourse,
+            buildStudentMarkKeys(matchedStudentInIC.marks, breakdownObe, breakdownCourse)
+          );
+
           return activeCats.map((cat: any) => {
-            let totalMaxMarks = 0;
-            let studentObtainedSum = 0;
-            const existingUnits = matchedIC.unitsData?.[cat.name] || course.unitsData?.[cat.name] || [];
-
-            for (let u = 1; u <= (cat.units || 1); u++) {
-              const matchingUnit = existingUnits.find((unit: any) => unit.unitNo === u);
-              const questions = matchingUnit?.questions || [];
-
-              if (questions.length > 0) {
-                questions.forEach((q: any) => {
-                  totalMaxMarks += q.maxMarks || 0;
-                  studentObtainedSum += getFuzzyStudentMark(matchedStudentInIC.marks, cat.name, u, q.id);
-                });
-              } else {
-                const maxMarks = matchingUnit ? matchingUnit.totalMarks : 10;
-                totalMaxMarks += maxMarks;
-                studentObtainedSum += getFuzzyStudentMark(matchedStudentInIC.marks, cat.name, u);
-              }
-            }
-
-            const catContribution = totalMaxMarks > 0
-              ? (studentObtainedSum / totalMaxMarks) * cat.percentage
-              : 0;
+            const catContribution = categoryContributions[cat.name] || 0;
 
             const scored = parseFloat(catContribution.toFixed(1));
             const max = cat.percentage;
