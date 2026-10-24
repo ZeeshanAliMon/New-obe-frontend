@@ -743,7 +743,10 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
   const [semesterPlans, setSemesterPlans] = useState<any[]>([]);
 
   // UI States
-  const [expandedCourseCode, setExpandedCourseCode] = useState<string | null>(null);
+  // Which semester sections are expanded on the Transcript tab.
+  const [openSemesters, setOpenSemesters] = useState<Record<string, boolean>>({});
+  // Official (sealed) transcript record on the Transcript tab; collapsed by default.
+  const [showSealedRecord, setShowSealedRecord] = useState<boolean>(false);
   const [cloFilterCourseCode, setCloFilterCourseCode] = useState<string>('all');
   const [selectedSemester, setSelectedSemester] = useState<string>('all');
   const [selectedCloCourseCode, setSelectedCloCourseCode] = useState<string | null>(null);
@@ -1741,6 +1744,15 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
     return Array.from(seen.values());
   }, [courses, studentBindings, activeRegNo, instructorCourses, rawStudentCourses, allInstructorCoursesState]);
 
+  // The CLO and GA tabs open on a course straight away (chosen from a
+  // dropdown) instead of a grid of course cards, so keep a valid selection.
+  useEffect(() => {
+    if (enrolledCoursesWithGrades.length === 0) return;
+    const codes = enrolledCoursesWithGrades.map(c => c.code);
+    if (!selectedCloCourseCode || !codes.includes(selectedCloCourseCode)) setSelectedCloCourseCode(codes[0]);
+    if (!selectedGaCourseCode || !codes.includes(selectedGaCourseCode)) setSelectedGaCourseCode(codes[0]);
+  }, [enrolledCoursesWithGrades, selectedCloCourseCode, selectedGaCourseCode]);
+
   // Group enrolled courses by Semester
   const coursesBySemester = useMemo(() => {
     const grouped: Record<string, typeof enrolledCoursesWithGrades> = {};
@@ -2102,6 +2114,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
     if (semKeys.length > 0 && selectedSemester === 'all') {
       const sorted = [...semKeys].sort((a, b) => b.localeCompare(a));
       setSelectedSemester(sorted[0]);
+      setOpenSemesters(prev => (Object.keys(prev).length ? prev : { [sorted[0]]: true }));
     }
   }, [coursesBySemester]);
 
@@ -2229,130 +2242,6 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
   }, [enrolledCoursesWithGrades, selectedCloCourseCode]);
 
   // Helper to retrieve detailed marks breakdown for expanded views
-  const getCourseMarksBreakdown = (course: any) => {
-    if (!course) return [];
-
-    const courseCode = course.code;
-    const stdRegNo = activeRegNo;
-
-    // Try to find the matched instructor course for dynamic real-time calculations
-    let matchedIC = allInstructorCoursesState.find((ic: any) =>
-      matchInstructorCourse(ic, courseCode, course.name || course.title)
-    ) || (instructorCourses || []).find((ic: any) =>
-      matchInstructorCourse(ic, courseCode, course.name || course.title)
-    );
-
-    if (!matchedIC && course && (course.categories || course.studentMarks || course.student_marks)) {
-      matchedIC = {
-        ...course,
-        categories: course.categories || course.course_categories || [],
-        unitsData: course.unitsData || course.units_data || {},
-        students: [
-          {
-            regNo: stdRegNo,
-            marks: course.studentMarks || course.student_marks || course.marks || {}
-          }
-        ]
-      };
-    }
-
-    if (matchedIC) {
-      let matchedStudentInIC = matchedIC.students?.find((s: any) =>
-        areStudentsEqual(s.regNo, stdRegNo)
-      );
-
-      const directMarks = course.studentMarks || course.student_marks || course.marks || (course.students && course.students[0]?.marks) || {};
-      if (!matchedStudentInIC || (!matchedStudentInIC.marks && Object.keys(directMarks).length > 0)) {
-        matchedStudentInIC = {
-          regNo: stdRegNo,
-          marks: {
-            ...(matchedStudentInIC?.marks || {}),
-            ...directMarks
-          }
-        };
-      }
-
-      if (matchedStudentInIC && matchedStudentInIC.marks) {
-        const activeCats = (matchedIC.categories || course.categories || []).filter((cat: any) => cat.percentage > 0);
-
-        if (activeCats.length > 0) {
-          // Per-category scores from the same calculation as the instructor's
-          // mark sheet (utils/grading.ts), so the breakdown adds up to the total
-          // and grade shown above it. This used to be a third implementation
-          // whose lookup returned the whole unit total for every question.
-          const breakdownCourse = {
-            ...matchedIC,
-            categories: matchedIC.categories || course.categories || [],
-            unitsData: Object.fromEntries(activeCats.map((cat: any) => [
-              cat.name,
-              matchedIC.unitsData?.[cat.name] || course.unitsData?.[cat.name] || [],
-            ])),
-          };
-          const keyedObe = matchedIC.obeMarks || matchedIC.obe_marks;
-          const obeKey = keyedObe ? Object.keys(keyedObe).find((k: string) => areStudentsEqual(k, stdRegNo)) : undefined;
-          const breakdownObe = obeKey ? keyedObe[obeKey] : (course.obeMarks || course.obe_marks || {});
-          const { categoryContributions } = computeCourseAggregate(
-            breakdownCourse,
-            buildStudentMarkKeys(matchedStudentInIC.marks, breakdownObe, breakdownCourse)
-          );
-
-          return activeCats.map((cat: any) => {
-            const catContribution = categoryContributions[cat.name] || 0;
-
-            const scored = parseFloat(catContribution.toFixed(1));
-            const max = cat.percentage;
-            const pct = max > 0 ? Math.round((scored / max) * 100) : 0;
-
-            return {
-              category: cat.name,
-              scored,
-              max,
-              pct
-            };
-          });
-        }
-      }
-    }
-    
-    // If we have a categoryBreakdown object directly from API
-    if (course.categoryBreakdown && typeof course.categoryBreakdown === 'object') {
-      if (Array.isArray(course.categoryBreakdown)) {
-        return course.categoryBreakdown;
-      }
-      return Object.entries(course.categoryBreakdown).map(([category, val]: [string, any]) => {
-        const scored = val.obtained !== undefined ? val.obtained : (val.scored ?? 0);
-        const max = val.total !== undefined ? val.total : (val.weight ?? val.max ?? 100);
-        const pct = val.percentage !== undefined ? val.percentage : (max > 0 ? Math.round((scored / max) * 100) : 0);
-        return {
-          category,
-          scored,
-          max,
-          pct
-        };
-      });
-    }
-
-    // Fallback if the rawStudentCourses structure has categories
-    if (course.categories && Array.isArray(course.categories)) {
-      return course.categories.map((cat: any) => ({
-        category: cat.name,
-        scored: 0,
-        max: cat.percentage ?? 100,
-        pct: 0
-      }));
-    }
-
-    // Default static fallback list
-    return [
-      { category: 'Assignments', scored: 0, max: 15, pct: 0 },
-      { category: 'Quizzes', scored: 0, max: 10, pct: 0 },
-      { category: 'Class Project', scored: 0, max: 15, pct: 0 },
-      { category: 'Presentation', scored: 0, max: 5, pct: 0 },
-      { category: 'Mid Term Exam', scored: 0, max: 20, pct: 0 },
-      { category: 'Final Term Exam', scored: 0, max: 30, pct: 0 },
-      { category: 'Class Attendance', scored: 0, max: 5, pct: 0 }
-    ];
-  };
 
   if (loading) {
     return (
@@ -2472,39 +2361,44 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
         )}
 
         {/* TAB CONTROLS */}
-        <div className="flex border-b border-slate-200">
+        {/* Short labels on phones: the three full labels were wider than a phone
+            screen and made the whole page scroll sideways. */}
+        <div className="flex border-b border-slate-200 overflow-x-auto">
           <button
             onClick={() => setActiveTab('transcript')}
-            className={`py-3.5 px-5 font-bold text-xs tracking-wide uppercase border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+            className={`py-3.5 px-3 sm:px-5 flex-1 sm:flex-none justify-center sm:justify-start whitespace-nowrap font-bold text-xs tracking-wide uppercase border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'transcript'
                 ? 'border-indigo-600 text-indigo-600'
                 : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
           >
             <FileText className="h-4 w-4" />
-            <span>Semester Transcript</span>
+            <span className="sm:hidden">Transcript</span>
+            <span className="hidden sm:inline">Semester Transcript</span>
           </button>
           <button
             onClick={() => setActiveTab('obe_clo')}
-            className={`py-3.5 px-5 font-bold text-xs tracking-wide uppercase border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+            className={`py-3.5 px-3 sm:px-5 flex-1 sm:flex-none justify-center sm:justify-start whitespace-nowrap font-bold text-xs tracking-wide uppercase border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'obe_clo'
                 ? 'border-indigo-600 text-indigo-600'
                 : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
           >
             <Layers className="h-4 w-4" />
-            <span>CLO Attainment Indices</span>
+            <span className="sm:hidden">CLOs</span>
+            <span className="hidden sm:inline">CLO Attainment Indices</span>
           </button>
           <button
             onClick={() => setActiveTab('ga_attainment')}
-            className={`py-3.5 px-5 font-bold text-xs tracking-wide uppercase border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+            className={`py-3.5 px-3 sm:px-5 flex-1 sm:flex-none justify-center sm:justify-start whitespace-nowrap font-bold text-xs tracking-wide uppercase border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'ga_attainment'
                 ? 'border-indigo-600 text-indigo-600'
                 : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
           >
             <PlaqueIcon className="h-4 w-4" />
-            <span>GA Attainment Profile</span>
+            <span className="sm:hidden">GAs</span>
+            <span className="hidden sm:inline">GA Attainment Profile</span>
           </button>
         </div>
 
@@ -2519,69 +2413,85 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="space-y-6"
+                className="space-y-4"
               >
                 {finalTranscripts.length > 0 && (
-                  <div className="bg-white border border-slate-200 rounded-3xl shadow-xs overflow-hidden animate-fade-in">
-                    <div className="bg-gradient-to-r from-slate-900 to-indigo-950 px-6 py-5 flex items-center justify-between border-b border-slate-100">
-                      <div className="flex items-center gap-2.5 text-white">
-                        <Award className="h-5 w-5 text-indigo-400" />
-                        <div>
-                          <h3 className="text-sm font-bold tracking-tight uppercase">Official Academic Transcript Record</h3>
-                          <p className="text-[10px] text-slate-300 font-medium">Permanent snapshot ledger of finalized semesters (Snapshotted & Sealed)</p>
+                  // Finalized (sealed) results, as a collapsed dropdown like the
+                  // semester sections below. This was a large dark panel that is
+                  // always open, repeating courses that also appear in the table.
+                  <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="flex items-center justify-between gap-3 pr-4 sm:pr-5">
+                      <button
+                        type="button"
+                        aria-expanded={showSealedRecord}
+                        onClick={() => setShowSealedRecord(v => !v)}
+                        className="flex-1 flex items-center gap-3 min-w-0 px-4 sm:px-5 py-3.5 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+                      >
+                        <ChevronDown className={`h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200 ${showSealedRecord ? 'rotate-180' : ''}`} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                            Official Transcript Record
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">Sealed</span>
+                          </p>
+                          <p className="text-xs text-slate-500">{finalTranscripts.length} finalized course{finalTranscripts.length === 1 ? '' : 's'} · permanent record</p>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-3">
+                      </button>
+                      {/* Only needed when there are no current enrollments; otherwise
+                          the Academic Record toolbar below has the download button. */}
+                      {enrolledCoursesWithGrades.length === 0 && (
                         <button
                           onClick={() => setIsPrintingTranscript(true)}
-                          className="bg-indigo-650 hover:bg-indigo-600 text-white border border-indigo-500/30 text-[10.5px] font-bold tracking-wider uppercase px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 font-sans cursor-pointer transition-all active:scale-95 shadow-sm"
+                          className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors shrink-0"
                         >
-                          <Download className="h-3.5 w-3.5 text-indigo-200" />
+                          <Download className="h-3.5 w-3.5" />
                           <span>Download Transcript</span>
                         </button>
-                        <span className="bg-blue-500/20 text-blue-400 border border-blue-500/30 text-[10px] font-black tracking-wider uppercase px-2.5 py-1 rounded-full flex items-center gap-1.5 font-mono">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                          SEALED
-                        </span>
-                      </div>
+                      )}
                     </div>
 
-                    <div className="p-0 overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                            <th className="py-3 px-6">Course / Code</th>
-                            <th className="py-3 px-4">Instructor</th>
-                            <th className="py-3 px-4">Term / Year</th>
-                            <th className="py-3 px-4 text-center">Credit Hours</th>
-                            <th className="py-3 px-4 text-center">Final Mark</th>
-                            <th className="py-3 px-4 text-center">Grade / GPA</th>
-                            <th className="py-3 px-4">Finalized On</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-                          {finalTranscripts.map((t, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50/50 transition-colors font-medium">
-                              <td className="py-4 px-6">
-                                <div className="font-bold text-slate-900">{t.courseTitle}</div>
-                                <div className="font-mono text-[10px] text-slate-400 mt-0.5">{t.courseCode}</div>
-                              </td>
-                              <td className="py-4 px-4 text-slate-600 font-semibold">{t.instructorName}</td>
-                              <td className="py-4 px-4 text-slate-500 font-semibold">{t.academicYear} <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded-md text-slate-600 font-mono ml-1">{t.semester || '6th'}</span></td>
-                              <td className="py-4 px-4 text-center font-mono text-slate-500">{t.creditHours || 3}</td>
-                              <td className="py-4 px-4 text-center font-mono font-black text-indigo-950">{t.finalPercentage ? t.finalPercentage.toFixed(2) : '0.00'}%</td>
-                              <td className="py-4 px-4 text-center">
-                                <div className="font-black text-indigo-650">{t.grade}</div>
-                                <div className="text-[10px] text-slate-400 font-mono mt-0.5">{t.gradePoints ? t.gradePoints.toFixed(2) : '0.00'} GP</div>
-                              </td>
-                              <td className="py-4 px-4 font-mono text-[10px] text-slate-400">
-                                {t.finalizedAt ? new Date(t.finalizedAt).toLocaleDateString() : 'N/A'}
-                              </td>
+                    {showSealedRecord && (
+                      <div className="border-t border-slate-200 overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                              <th className="text-left font-semibold px-4 sm:px-5 py-2.5">Course</th>
+                              <th className="hidden md:table-cell text-left font-semibold px-3 py-2.5">Instructor</th>
+                              <th className="text-left font-semibold px-3 py-2.5">Term</th>
+                              <th className="hidden sm:table-cell text-center font-semibold px-3 py-2.5">Credits</th>
+                              <th className="text-right font-semibold px-3 py-2.5">Final Mark</th>
+                              <th className="text-center font-semibold px-3 py-2.5">Grade</th>
+                              <th className="hidden md:table-cell text-right font-semibold px-4 sm:px-5 py-2.5">Finalized</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {finalTranscripts.map((t, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50/60">
+                                <td className="px-4 sm:px-5 py-3">
+                                  <div className="font-medium text-slate-800">{t.courseTitle}</div>
+                                  <div className="font-mono text-[11px] text-indigo-700">{t.courseCode}</div>
+                                </td>
+                                <td className="hidden md:table-cell px-3 py-3 text-slate-600">{t.instructorName}</td>
+                                <td className="px-3 py-3 text-slate-600 whitespace-nowrap">
+                                  {t.academicYear}
+                                  {/* Was `t.semester || '6th'`: a hardcoded fallback that
+                                      labelled every record "6th" when no semester was stored. */}
+                                  {t.semester && <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-mono ml-1">{t.semester}</span>}
+                                </td>
+                                <td className="hidden sm:table-cell px-3 py-3 text-center font-mono text-slate-600">{t.creditHours || 3}</td>
+                                <td className="px-3 py-3 text-right font-mono text-slate-800">{t.finalPercentage ? t.finalPercentage.toFixed(2) : '0.00'}%</td>
+                                <td className="px-3 py-3 text-center">
+                                  <span className={`inline-block min-w-[2.5rem] px-2 py-0.5 text-xs font-bold rounded border ${t.grade === 'F' ? 'bg-red-50 text-red-800 border-red-200' : 'bg-blue-50 text-blue-800 border-blue-200'}`}>{t.grade}</span>
+                                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">{t.gradePoints ? t.gradePoints.toFixed(2) : '0.00'} GP</div>
+                                </td>
+                                <td className="hidden md:table-cell px-4 sm:px-5 py-3 text-right font-mono text-[11px] text-slate-500">
+                                  {t.finalizedAt ? new Date(t.finalizedAt).toLocaleDateString() : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2594,199 +2504,127 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-6">
-                    {/* Control Bar: Semesters and Download action */}
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      {/* Compact Professional Semester Navigation Pills */}
-                      <div className="flex flex-wrap items-center gap-2 bg-slate-100/80 p-2 rounded-xl border border-slate-200 max-w-fit shadow-xs">
-                        <span className="text-xs uppercase font-bold text-slate-500 px-2">
-                          Academic Semesters:
-                        </span>
-                        {Object.keys(coursesBySemester).map(semKey => (
-                          <button
-                            key={semKey}
-                            onClick={() => {
-                              setSelectedSemester(semKey);
-                              setExpandedCourseCode(null);
-                            }}
-                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                              selectedSemester === semKey
-                                ? 'bg-indigo-600 text-white shadow-sm'
-                                : 'text-slate-600 hover:text-indigo-950 hover:bg-slate-200/50'
-                            }`}
-                          >
-                            {semKey.replace(' Semester', '')}
-                          </button>
-                        ))}
-                        <button
-                          onClick={() => {
-                            setSelectedSemester('all');
-                            setExpandedCourseCode(null);
-                          }}
-                          className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            selectedSemester === 'all'
-                              ? 'bg-indigo-600 text-white shadow-sm'
-                              : 'text-slate-600 hover:text-indigo-950 hover:bg-slate-200/50'
-                          }`}
-                        >
-                          All Semesters
-                        </button>
-                      </div>
-
-                      {/* Prominent Download Official Transcript Button */}
-                      <button
-                        onClick={() => setIsPrintingTranscript(true)}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs tracking-wider uppercase px-5 py-3 rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all active:scale-95 duration-200"
-                      >
-                        <Download className="h-4 w-4" />
-                        <span>Download Official Transcript</span>
-                      </button>
-                    </div>
-
-                                        {/* Empty state when no courses enrolled */}
-                    {Object.keys(coursesBySemester).length === 0 && (
-                      <div className="bg-white border border-slate-200 rounded-xl p-12 text-center shadow-xs">
-                        <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                        <h3 className="text-base font-bold text-slate-700 mb-1">No Enrolled Courses Found</h3>
-                        <p className="text-xs text-slate-500 max-w-md mx-auto">
-                          No academic course records or registrations were found for your student profile from the database.
+                  <div className="space-y-3">
+                    {/* Toolbar */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Academic Record</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {Object.keys(coursesBySemester).length} semester{Object.keys(coursesBySemester).length === 1 ? '' : 's'} · {enrolledCoursesWithGrades.length} course{enrolledCoursesWithGrades.length === 1 ? '' : 's'}
                         </p>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const keys = Object.keys(coursesBySemester);
+                            const allOpen = keys.every(k => openSemesters[k]);
+                            setOpenSemesters(Object.fromEntries(keys.map(k => [k, !allOpen])));
+                          }}
+                          className="text-xs font-semibold text-slate-600 hover:text-indigo-700 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                        >
+                          {Object.keys(coursesBySemester).every(k => openSemesters[k]) ? 'Collapse all' : 'Expand all'}
+                        </button>
+                        <button
+                          onClick={() => setIsPrintingTranscript(true)}
+                          className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          <span>Download Transcript</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {Object.keys(coursesBySemester).length === 0 && (
+                      <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
+                        <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                        <h3 className="text-sm font-bold text-slate-700">No Enrolled Courses Found</h3>
+                        <p className="text-xs text-slate-500 mt-1">No course registrations were found for your student profile.</p>
+                      </div>
                     )}
-                    {/* Semesters list */}
-                    {Object.keys(coursesBySemester)
-                      .filter(semesterKey => selectedSemester === 'all' || selectedSemester === semesterKey)
-                      .map(semesterKey => (
-                        <div key={semesterKey} className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-                          {/* Semester Header */}
-                          <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between">
-                            <div className="flex items-center gap-2.5">
-                              <Calendar className="h-5 w-5 text-indigo-600" />
-                              <h3 className="text-sm font-bold text-indigo-950 uppercase tracking-wider">{semesterKey} Academic Ledger</h3>
+
+                    {/* One collapsible section per semester. Replaces the old grid of
+                        large course cards with an expandable per-course marks
+                        breakdown, which made the page very long. */}
+                    {Object.keys(coursesBySemester).map(semesterKey => {
+                      const semCourses = coursesBySemester[semesterKey];
+                      const isOpen = !!openSemesters[semesterKey];
+                      const credits = semCourses.reduce((sum: number, c: any) => sum + (c.creditHours || 3), 0);
+                      const semGpa = semesterGPAs[semesterKey] || 0;
+                      return (
+                        <div key={semesterKey} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                          <button
+                            type="button"
+                            aria-expanded={isOpen}
+                            onClick={() => {
+                              setOpenSemesters(prev => ({ ...prev, [semesterKey]: !isOpen }));
+                              if (!isOpen) setSelectedSemester(semesterKey);
+                            }}
+                            className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <ChevronDown className={`h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-slate-900 truncate">{semesterKey}</p>
+                                <p className="text-xs text-slate-500">{semCourses.length} course{semCourses.length === 1 ? '' : 's'} · {credits} credit hours</p>
+                              </div>
                             </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Semester GPA</p>
+                              <p className="text-sm font-bold font-mono text-slate-900">{semGpa > 0 ? semGpa.toFixed(2) : '—'}</p>
+                            </div>
+                          </button>
 
-                          </div>
-
-                          {/* Course Cards Grid */}
-                          <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-slate-50/10">
-                            {coursesBySemester[semesterKey].map((course, cIdx) => {
-                              const isExpanded = expandedCourseCode === course.code;
-                              const isPending = course.results.letterGrade === 'Pending' || course.results.letterGrade === '-' || !course.results.hasAnyMarks;
-                              const hasPassed = course.results.letterGrade !== 'F' && !isPending;
-
-                              return (
-                                <div 
-                                  key={`${semesterKey}-${course.code}-${course.id || ''}-${cIdx}`} 
-                                  className={`bg-white border rounded-xl transition-all duration-200 flex flex-col justify-between overflow-hidden relative ${
-                                    isExpanded 
-                                      ? 'border-indigo-500 ring-2 ring-indigo-500/5 col-span-1 md:col-span-2 lg:col-span-3 shadow-xs' 
-                                      : 'border-slate-200 hover:border-slate-300 hover:shadow-sm'
-                                  }`}
-                                >
-                                  {/* Main Card Content */}
-                                  <div className="p-5 space-y-4">
-                                    {/* Badges Row */}
-                                    <div className="flex items-center justify-between">
-                                      <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded border border-indigo-200">
-                                        {course.code}
-                                      </span>
-                                      <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full capitalize border tracking-wide ${
-                                        course.title?.toLowerCase().includes('lab')
-                                          ? 'bg-purple-100 text-purple-850 border-purple-200'
-                                          : course.type === 'core'
-                                            ? 'bg-blue-100 text-blue-850 border-blue-200'
-                                            : 'bg-amber-100 text-amber-850 border-amber-200'
-                                      }`}>
-                                        {course.type} Course
-                                      </span>
-                                    </div>
-
-                                    {/* Course Title */}
-                                    <div>
-                                      <h4 className="text-sm font-bold text-slate-800 tracking-tight leading-snug min-h-[40px]" title={course.title}>
-                                        {course.title}
-                                      </h4>
-                                      <p className="text-xs text-slate-500 font-medium font-sans mt-1">
-                                        {course.creditHours || 3} Credit Hours • Lecture-Based OBE Class
-                                      </p>
-                                    </div>
-
-                                    {/* Main Stats Row */}
-                                    <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100 bg-slate-50 p-2.5 rounded-lg">
-                                      <div className="text-center">
-                                        <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Score</p>
-                                        <p className="text-sm font-bold text-slate-800 font-mono mt-0.5">
-                                          {course.results.hasAnyMarks 
+                          {isOpen && (
+                            <div className="border-t border-slate-200 overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                                    <th className="text-left font-semibold px-4 sm:px-5 py-2.5">Code</th>
+                                    <th className="text-left font-semibold px-3 py-2.5">Course</th>
+                                    <th className="hidden sm:table-cell text-center font-semibold px-3 py-2.5">Credits</th>
+                                    <th className="text-right font-semibold px-3 py-2.5">Score</th>
+                                    <th className="text-center font-semibold px-3 py-2.5">Grade</th>
+                                    <th className="hidden sm:table-cell text-right font-semibold px-4 sm:px-5 py-2.5">Grade Points</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {semCourses.map((course: any, cIdx: number) => {
+                                    const isPending = course.results.letterGrade === 'Pending' || course.results.letterGrade === '-' || !course.results.hasAnyMarks;
+                                    const hasPassed = course.results.letterGrade !== 'F' && !isPending;
+                                    return (
+                                      <tr key={`${semesterKey}-${course.code}-${course.id || ''}-${cIdx}`} className="hover:bg-slate-50/60">
+                                        <td className="px-4 sm:px-5 py-3 font-mono text-xs font-semibold text-indigo-700 whitespace-nowrap">{course.code}</td>
+                                        <td className="px-3 py-3 text-slate-800 font-medium">{course.title}</td>
+                                        <td className="hidden sm:table-cell px-3 py-3 text-center font-mono text-slate-600">{course.creditHours || 3}</td>
+                                        <td className="px-3 py-3 text-right font-mono text-slate-800 whitespace-nowrap">
+                                          {course.results.hasAnyMarks
                                             ? `${course.results.aggregate % 1 === 0 ? course.results.aggregate.toFixed(0) : course.results.aggregate.toFixed(2).replace(/\.?0+$/, '')}%`
-                                            : 'Pending'}
-                                        </p>
-                                      </div>
-
-                                      <div className="text-center border-x border-slate-200">
-                                        <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Grade</p>
-                                        <span className={`inline-block px-2 py-0.5 text-xs font-bold rounded mt-0.5 ${
-                                          isPending
-                                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                                            : hasPassed 
-                                              ? 'bg-blue-100 text-blue-800 border border-blue-200' 
-                                              : 'bg-red-100 text-red-800 border border-red-200'
-                                        }`}>
-                                          {course.results.letterGrade}
-                                        </span>
-                                      </div>
-
-                                      <div className="text-center">
-                                        <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">GPA</p>
-                                        <p className="text-sm font-bold text-indigo-950 font-mono mt-0.5">
-                                          {course.results.hasAnyMarks ? course.results.points.toFixed(2) : '-'}
-                                        </p>
-                                      </div>
-                                    </div>
-                                                              {/* Card Footer Action */}
-                                  <div 
-                                    onClick={() => setExpandedCourseCode(isExpanded ? null : course.code)}
-                                    className="bg-slate-50 border-t border-slate-200 px-5 py-2.5 flex items-center justify-between text-xs font-bold text-slate-600 hover:text-indigo-600 hover:bg-slate-100 cursor-pointer transition-colors"
-                                  >
-                                    <span>{isExpanded ? 'Hide Details' : 'View Assessment'}</span>
-                                    <div className="text-slate-400">
-                                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                    </div>
-                                  </div>
-
-                                  {/* Course Expanded Details: Question/Assessment Breakdown */}
-                                  {isExpanded && (
-                                    <div className="px-5 pb-5 pt-3 bg-slate-50/50 border-t border-slate-200 space-y-4 animate-fade-in">
-                                      <div>
-                                        <h5 className="text-xs font-bold uppercase text-indigo-950 tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-200">
-                                          <ClipboardCheck className="h-4.5 w-4.5 text-indigo-600" />
-                                          Assessment Marks Breakdown
-                                        </h5>
-                                        
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 mt-3">
-                                          {getCourseMarksBreakdown(course).map((item, idx) => (
-                                            <div key={idx} className="bg-white border border-slate-200 p-3 rounded-lg flex justify-between items-center shadow-xs">
-                                              <div>
-                                                <p className="text-xs font-bold text-slate-700 truncate max-w-[120px]" title={item.category}>{item.category}</p>
-                                                <p className="text-xs text-slate-500 font-mono font-medium mt-0.5">Weight: {item.max}%</p>
-                                              </div>
-                                              <div className="text-right">
-                                                <p className="text-xs font-bold text-indigo-950 font-mono">
-                                                  {item.scored} <span className="text-slate-500">/{item.max}</span>
-                                                </p>
-                                                <p className="text-xs font-bold text-blue-600 font-mono mt-0.5">{item.pct}%</p>
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>        </div>
-                              );
-                            })}
-                          </div>
+                                            : '—'}
+                                        </td>
+                                        <td className="px-3 py-3 text-center">
+                                          <span className={`inline-block min-w-[2.5rem] px-2 py-0.5 text-xs font-bold rounded border ${
+                                            isPending
+                                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                              : hasPassed
+                                                ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                                : 'bg-red-50 text-red-800 border-red-200'
+                                          }`}>
+                                            {course.results.letterGrade}
+                                          </span>
+                                        </td>
+                                        <td className="hidden sm:table-cell px-4 sm:px-5 py-3 text-right font-mono text-slate-600">
+                                          {course.results.hasAnyMarks && !isPending ? course.results.points.toFixed(2) : '—'}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                         </div>
-                      ))}
+                      );
+                    })}
                   </div>
                 )}
               </motion.div>
@@ -2801,101 +2639,33 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                 exit={{ opacity: 0, y: -10 }}
                 className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6"
               >
-                {selectedCloCourseCode === null ? (
-                  <div className="space-y-6">
-                    <div className="pb-4 border-b border-slate-100 space-y-1">
-                      <h3 className="text-base font-bold text-slate-800">Course Learning Outcome (CLO) Audit</h3>
-                      <p className="text-xs text-slate-400">Select a registered course below to view its specific CLO attainments. A score of 50% or above denotes outcome attainment.</p>
-                    </div>
-
-                    {enrolledCoursesWithGrades.length === 0 ? (
-                      <div className="text-center py-12 text-slate-400 text-xs font-semibold">
-                        No registered courses found.
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {enrolledCoursesWithGrades.map((course, cIdx) => {
-                          const totalCLOs = course.results?.clos?.length || 0;
-                          const attainedCLOs = course.results?.clos?.filter((clo: any) => clo.status === 'Attained').length || 0;
-                          const pctAttained = totalCLOs > 0 ? Math.round((attainedCLOs / totalCLOs) * 100) : 0;
-                          const grade = course.results?.letterGrade || '-';
-                          const aggregate = course.results?.aggregate !== undefined ? course.results.aggregate : null;
-
-                          return (
-                            <div
-                              key={`clo-${course.code}-${course.id || ''}-${cIdx}`}
-                              onClick={() => setSelectedCloCourseCode(course.code)}
-                              className="group cursor-pointer bg-slate-50/50 hover:bg-white border border-slate-200/60 hover:border-indigo-300 hover:shadow-md p-5 rounded-2xl transition-all flex flex-col justify-between h-48 relative overflow-hidden"
-                            >
-                              <div className="space-y-1.5 z-10">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-mono text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
-                                    {course.code}
-                                  </span>
-                                  {grade !== '-' && (
-                                    <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                      Grade: {grade} ({aggregate !== null ? `${aggregate % 1 === 0 ? aggregate.toFixed(0) : aggregate.toFixed(2).replace(/\.?0+$/, '')}%` : ''})
-                                    </span>
-                                  )}
-                                </div>
-                                <h4 className="text-sm font-bold text-slate-800 tracking-tight group-hover:text-indigo-900 transition leading-snug line-clamp-2">
-                                  {course.title}
-                                </h4>
-                              </div>
-
-                              <div className="space-y-2 pt-2 border-t border-slate-100 z-10">
-                                <div className="flex justify-between items-center text-xs text-slate-500 font-semibold">
-                                  <span>CLOs Mapped:</span>
-                                  <span className="font-mono text-indigo-950 font-black">
-                                    {attainedCLOs} / {totalCLOs} attained
-                                  </span>
-                                </div>
-                                <div className="w-full bg-slate-150 h-2 rounded-full overflow-hidden">
-                                  <div
-                                    className={`h-full rounded-full transition-all duration-500 ${
-                                      pctAttained === 100 ? 'bg-blue-500' : pctAttained >= 50 ? 'bg-indigo-500' : 'bg-amber-500'
-                                    }`}
-                                    style={{ width: `${pctAttained}%` }}
-                                  />
-                                </div>
-                                <div className="flex justify-end pt-1">
-                                  <span className="text-[10px] text-indigo-600 font-bold group-hover:translate-x-1 transition-transform flex items-center gap-1">
-                                    View CLO Attainments
-                                    <ChevronRight className="w-3 h-3" />
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                {enrolledCoursesWithGrades.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400 text-xs font-semibold">
+                    No registered courses found.
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {/* Back Button and Course Info Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-                      <div className="space-y-1">
-                        <button
-                          onClick={() => setSelectedCloCourseCode(null)}
-                          className="group flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-indigo-600 transition cursor-pointer mb-1 bg-slate-100/80 hover:bg-indigo-50 px-3 py-1.5 rounded-xl border border-slate-200 hover:border-indigo-200"
-                        >
-                          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-                          Back to Course List
-                        </button>
-                        {(() => {
-                          const currentCourse = enrolledCoursesWithGrades.find(c => c.code === selectedCloCourseCode);
-                          return (
-                            <div>
-                              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                                <span className="font-mono text-xs bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded border border-indigo-200 font-black">{currentCourse?.code}</span>
-                                {currentCourse?.title}
-                              </h3>
-                              <p className="text-xs text-slate-400">Course Learning Outcome (CLO) details and individual attainment scores.</p>
-                            </div>
-                          );
-                        })()}
+                    {/* Course dropdown. Replaces the grid of course cards and the
+                        "Back to Course List" step: pick a course, see its details. */}
+                    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pb-4 border-b border-slate-100">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-800">Course Learning Outcomes (CLO)</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">Attainment for each outcome of the selected course. 50% or above means the outcome is attained.</p>
                       </div>
+                      <label className="flex flex-col gap-1 w-full sm:w-96">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Course</span>
+                        <select
+                          value={selectedCloCourseCode || ''}
+                          onChange={(e) => setSelectedCloCourseCode(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 cursor-pointer"
+                        >
+                          {enrolledCoursesWithGrades.map((c, i) => (
+                            <option key={`${c.code}-${i}`} value={c.code}>
+                              {c.code} — {c.title}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                     </div>
 
                     {filteredCLOList.length === 0 ? (
@@ -2959,107 +2729,33 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                 exit={{ opacity: 0, y: -10 }}
                 className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6"
               >
-                {selectedGaCourseCode === null ? (
-                  <div className="space-y-6">
-                    <div className="pb-4 border-b border-slate-100 space-y-1">
-                      <h3 className="text-base font-bold text-slate-800">Graduate Attribute (GA) Attainment Profile</h3>
-                      <p className="text-xs text-slate-400">Select a registered course below to view the program-wide Graduate Attributes (GAs) mapped to its learning outcomes.</p>
-                    </div>
-
-                    {enrolledCoursesWithGrades.length === 0 ? (
-                      <div className="text-center py-12 text-slate-400 text-xs font-semibold">
-                        No registered courses found.
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {enrolledCoursesWithGrades.map((course, cIdx) => {
-                          const mappedGAsFromCLOs = Array.from(new Set(
-                            (course.results?.clos ?? [])
-                              .filter((clo: any) => clo.mappedGA && clo.mappedGA.gaId)
-                              .map((clo: any) => clo.mappedGA.gaId)
-                          )) as string[];
-                          const mappedGAsCount = mappedGAsFromCLOs.length;
-                          const grade = course.results?.letterGrade || '-';
-                          const aggregate = course.results?.aggregate !== undefined ? course.results.aggregate : null;
-
-                          return (
-                            <div
-                              key={`ga-${course.code}-${course.id || ''}-${cIdx}`}
-                              onClick={() => setSelectedGaCourseCode(course.code)}
-                              className="group cursor-pointer bg-slate-50/50 hover:bg-white border border-slate-200/60 hover:border-blue-300 hover:shadow-md p-5 rounded-2xl transition-all flex flex-col justify-between h-48 relative overflow-hidden"
-                            >
-                              <div className="space-y-1.5 z-10">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-mono text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                                    {course.code}
-                                  </span>
-                                  {grade !== '-' && (
-                                    <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                      Grade: {grade} ({aggregate !== null ? `${aggregate % 1 === 0 ? aggregate.toFixed(0) : aggregate.toFixed(2).replace(/\.?0+$/, '')}%` : ''})
-                                    </span>
-                                  )}
-                                </div>
-                                <h4 className="text-sm font-bold text-slate-800 tracking-tight group-hover:text-blue-900 transition leading-snug line-clamp-2">
-                                  {course.title}
-                                </h4>
-                              </div>
-
-                              <div className="space-y-2 pt-2 border-t border-slate-100 z-10">
-                                <div className="flex justify-between items-center text-xs text-slate-500 font-semibold">
-                                  <span>Graduate Attributes:</span>
-                                  <span className="font-mono text-blue-950 font-black">
-                                    {mappedGAsCount} {mappedGAsCount === 1 ? 'Attribute' : 'Attributes'}
-                                  </span>
-                                </div>
-                                <div className="flex flex-wrap gap-1 pt-1 overflow-hidden h-6">
-                                  {mappedGAsCount === 0 ? (
-                                    <span className="text-[9px] text-slate-400 font-bold">No GAs Mapped</span>
-                                  ) : (
-                                    mappedGAsFromCLOs.map((gaId) => (
-                                      <span key={gaId} className="bg-blue-50/50 border border-blue-100 text-blue-700 font-mono text-[9px] font-bold px-1.5 rounded">
-                                        {formatGACodeToStandard(gaId)}
-                                      </span>
-                                    ))
-                                  )}
-                                </div>
-                                <div className="flex justify-end pt-1">
-                                  <span className="text-[10px] text-blue-600 font-bold group-hover:translate-x-1 transition-transform flex items-center gap-1">
-                                    View GA Attainment
-                                    <ChevronRight className="w-3 h-3" />
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                {enrolledCoursesWithGrades.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400 text-xs font-semibold">
+                    No registered courses found.
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {/* Back Button and Course Info Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-                      <div className="space-y-1">
-                        <button
-                          onClick={() => setSelectedGaCourseCode(null)}
-                          className="group flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-blue-600 transition cursor-pointer mb-1 bg-slate-100/80 hover:bg-blue-50 px-3 py-1.5 rounded-xl border border-slate-200 hover:border-blue-200"
-                        >
-                          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-                          Back to Course List
-                        </button>
-                        {(() => {
-                          const currentCourse = enrolledCoursesWithGrades.find(c => c.code === selectedGaCourseCode);
-                          return (
-                            <div>
-                              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                                <span className="font-mono text-xs bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded border border-blue-200 font-black">{currentCourse?.code}</span>
-                                {currentCourse?.title}
-                              </h3>
-                              <p className="text-xs text-slate-400">Graduate Attribute (GA) attainment details mapping for this specific course.</p>
-                            </div>
-                          );
-                        })()}
+                    {/* Course dropdown. Replaces the grid of course cards and the
+                        "Back to Course List" step: pick a course, see its details. */}
+                    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pb-4 border-b border-slate-100">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-800">Graduate Attribute (GA) Attainment</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">Graduate Attributes this course contributes to, and your attainment in each.</p>
                       </div>
+                      <label className="flex flex-col gap-1 w-full sm:w-96">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Course</span>
+                        <select
+                          value={selectedGaCourseCode || ''}
+                          onChange={(e) => setSelectedGaCourseCode(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer"
+                        >
+                          {enrolledCoursesWithGrades.map((c, i) => (
+                            <option key={`${c.code}-${i}`} value={c.code}>
+                              {c.code} — {c.title}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                     </div>
 
                     {courseGaAttainment.length === 0 ? (
@@ -3119,63 +2815,6 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
 
           </AnimatePresence>
 
-          {/* RAW BACKEND DATA INSPECTOR FOR TRANSPARENT DEBUGGING */}
-          <div className="mt-8 bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4 text-slate-300">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-0.5">
-                <h3 className="text-sm font-bold text-slate-100 font-mono flex items-center gap-2">
-                  <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                  API Live Connection Diagnostics
-                </h3>
-                <p className="text-[10px] text-slate-500 font-mono">
-                  Verifying real-time data flow mapping between backend and student dashboard.
-                </p>
-              </div>
-              <button
-                id="toggle-api-inspector-btn"
-                onClick={() => setShowApiInspector(!showApiInspector)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-[10px] px-3.5 py-1.5 rounded-xl border border-slate-700 transition self-start sm:self-auto cursor-pointer"
-              >
-                {showApiInspector ? 'Hide Raw API JSON' : 'Inspect Raw API JSON'}
-              </button>
-            </div>
-
-            {showApiInspector && (
-              <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                <div className="p-4 bg-slate-950 rounded-2xl border border-slate-850 font-mono text-xs overflow-auto max-h-96 space-y-2">
-                  <div className="text-amber-400 font-bold border-b border-slate-850 pb-1.5 mb-2 flex justify-between">
-                    <span>GET /api/student/courses/</span>
-                    <span className="text-slate-500 font-normal">Count: {Array.isArray(rawStudentCourses) ? rawStudentCourses.length : 0}</span>
-                  </div>
-                  {rawStudentCourses ? (
-                    <pre className="text-[11px] text-slate-300 whitespace-pre-wrap break-all leading-normal">
-                      {JSON.stringify(rawStudentCourses, null, 2)}
-                    </pre>
-                  ) : (
-                    <div className="text-slate-500 italic py-4 text-center">
-                      No course data retrieved yet. Please verify authentication or server connectivity.
-                    </div>
-                  )}
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px] font-mono leading-relaxed bg-slate-950/50 p-4 rounded-2xl border border-slate-850">
-                  <div className="space-y-1">
-                    <span className="text-blue-400 font-bold">Processed Courses ({instructorCourses.length}):</span>
-                    {instructorCourses.map((ic, icIdx) => (
-                      <div key={`${ic.code}-${icIdx}`} className="text-slate-400 pl-2">
-                        • <span className="text-slate-200 font-bold">{ic.code}</span> (OBE Questions: {ic.obeQuestions?.length || 0})
-                      </div>
-                    ))}
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-indigo-400 font-bold">Active Student:</span>
-                    <div className="text-slate-300 pl-2">Reg No: <span className="text-white font-bold">{activeRegNo}</span></div>
-                    <div className="text-slate-300 pl-2">Name: <span className="text-slate-400 font-bold">{students.find(s => areStudentsEqual(s.regNo, activeRegNo))?.name || 'Logged-In Student'}</span></div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
 
         </div>
 
