@@ -1964,10 +1964,6 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
   };
 
   const [activeCourseId, setActiveCourseId] = useState<string>(() => {
-    const params = new URLSearchParams(window.location.search);
-    const paramCourseId = params.get('courseId');
-    if (paramCourseId) return paramCourseId;
-
     const saved = localStorage.getItem('IQRA_OBE_INSTRUCTOR_ACTIVE_ID');
     if (saved === 'course-1' || saved === 'course-2') return '';
     if (saved) return saved;
@@ -2061,12 +2057,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
           setErrorMsg(null);
           
           // Make sure a valid active course is selected and exists in the freshly-loaded list
-          const urlParams = new URLSearchParams(window.location.search);
-          const paramCourseId = urlParams.get('courseId');
-          
-          if (paramCourseId && normalized.some(c => c.id === paramCourseId)) {
-            setActiveCourseId(paramCourseId);
-          } else {
+          {
             const savedActive = localStorage.getItem('IQRA_OBE_INSTRUCTOR_ACTIVE_ID');
             const exists = normalized.some(c => c.id === savedActive);
             if (!savedActive || savedActive === 'course-1' || savedActive === 'course-2' || !exists) {
@@ -2093,11 +2084,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
               setErrorMsg(null);
               
               // Set active course from local data fallback
-              const urlParams = new URLSearchParams(window.location.search);
-              const paramCourseId = urlParams.get('courseId');
-              if (paramCourseId && normalized.some(c => c.id === paramCourseId)) {
-                setActiveCourseId(paramCourseId);
-              } else {
+              {
                 const savedActive = localStorage.getItem('IQRA_OBE_INSTRUCTOR_ACTIVE_ID');
                 const exists = normalized.some(c => c.id === savedActive);
                 if (!savedActive || savedActive === 'course-1' || savedActive === 'course-2' || !exists) {
@@ -2270,10 +2257,11 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
   const [courseToDeleteId, setCourseToDeleteId] = useState<string | null>(null);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [activeModal, setActiveModal] = useState<'about' | 'help' | 'marksheet-report' | null>(null);
-  const [isDirectPrinting, setIsDirectPrinting] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('print') === 'true';
-  });
+  // Set by handlePrintDirect only. It used to be seeded from a ?print=true URL
+  // that the old open-in-a-new-tab print flow generated; nothing creates that
+  // URL any more, so an old bookmark would just have auto-printed and frozen
+  // the report fields.
+  const [isDirectPrinting, setIsDirectPrinting] = useState(false);
 
   // Dynamic API CLOs states
   const [courseCLOs, setCourseCLOs] = useState<any[]>([]);
@@ -2560,58 +2548,22 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
   }, [activeCourseId, courses, loading]);
 
   // Marksheet Report metadata states
-  const [reportCampus, setReportCampus] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('campus') || 'Iqra University Chak Shahzad Campus Islamabad';
-  });
-  const [reportType, setReportType] = useState<'standard' | 'combined' | 'award' | 'clo' | 'ga'>(() => {
-    const params = new URLSearchParams(window.location.search);
-    const rt = params.get('reportType');
-    if (rt === 'combined') return 'combined';
-    if (rt === 'award') return 'award';
-    if (rt === 'clo') return 'clo';
-    if (rt === 'ga') return 'ga';
-    return 'standard';
-  });
-  const [reportSemester, setReportSemester] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('semester') || 'SPRING 2026';
-  });
-  const [reportSection, setReportSection] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('section') || 'A';
-  });
-  const [reportOfferedIn, setReportOfferedIn] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('offeredIn') || 'Morning';
-  });
-  const [reportSession, setReportSession] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('session') || 'B.Sc Computer Science (Fall-Morning)';
-  });
-  const [reportInstructor, setReportInstructor] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('instructor') || 'Prof. Dr. Jameel Ahmed';
-  });
-  const [reportDated, setReportDated] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('dated') || '';
-  });
+  const [reportCampus, setReportCampus] = useState('Iqra University Chak Shahzad Campus Islamabad');
+  const [reportType, setReportType] = useState<'standard' | 'combined' | 'award' | 'clo' | 'ga'>('standard');
+  const [reportSemester, setReportSemester] = useState('SPRING 2026');
+  const [reportSection, setReportSection] = useState('A');
+  const [reportOfferedIn, setReportOfferedIn] = useState('Morning');
+  const [reportSession, setReportSession] = useState('B.Sc Computer Science (Fall-Morning)');
+  const [reportInstructor, setReportInstructor] = useState('Prof. Dr. Jameel Ahmed');
+  const [reportDated, setReportDated] = useState('');
   const [reportPrintDate, setReportPrintDate] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    const d = params.get('printDate');
-    if (d) return d;
     const today = new Date();
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${today.getDate()}-${months[today.getMonth()]}-${today.getFullYear()}`;
   });
 
-  // Automatically sync report details when course context shifts, unless overridden by direct URL printing
+  // Automatically sync report details when the selected course changes
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('print') === 'true') {
-      return;
-    }
     if (selectedCourse) {
       // The heading used to be `B.Sc ${programName} (Fall-Morning)`. The program
       // name from the API already carries its degree ("BS Computer Science
@@ -2629,27 +2581,18 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
         : '';
       const shift = season ? `${season}-Morning` : 'Morning';
       setReportSession(base ? `${base} (${shift})` : `(${shift})`);
+
+      // Semester was a hardcoded 'SPRING 2026' default that was never synced, so
+      // every sheet printed that regardless of the course (a Spring-2023 course
+      // showed "SPRING 2026"). Take it from the course's own term when known.
+      const termText = String(selectedCourse.academicYear || '').replace(/[-_]+/g, ' ').trim();
+      if (termText) setReportSemester(termText.toUpperCase());
       setReportInstructor(instructorName);
       const today = new Date();
       setReportDated(today.toISOString().split('T')[0]);
     }
   }, [selectedCourse, instructorName]);
 
-  // Automatic print trigger on tab loading if print=true query param is present
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('print') === 'true' && selectedCourse) {
-      const timer = setTimeout(() => {
-        try {
-          window.focus();
-          window.print();
-        } catch (e) {
-          console.error("Print failed:", e);
-        }
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [selectedCourse]);
 
   const handlePrintDirect = () => {
     if (!selectedCourse) return;
