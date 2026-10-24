@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { toPng } from 'html-to-image';
+import { toCanvas } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { 
   GraduationCap, 
@@ -39,6 +39,45 @@ import { buildStudentMarkKeys, computeCourseAggregate, getCourseLetterGrade } fr
 const normalizeRegNo = (reg: string) => {
   if (!reg) return '';
   return reg.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+};
+
+/**
+ * "BS Computer Science" / "BS (Computer Science)" / "BBA" ->
+ * "Bachelor of Science in Computer Science" / "Bachelor of Business Administration".
+ * Names that are already spelled out ("Bachelor of ...") or don't start with a
+ * known abbreviation are returned unchanged, so nothing is ever invented.
+ */
+const DEGREE_ABBREVIATIONS: [RegExp, string][] = [
+  [/^b\.?\s?s\.?\s?c\.?$/i, 'Bachelor of Science'],
+  [/^b\.?\s?s\.?$/i,        'Bachelor of Science'],
+  [/^b\.?\s?b\.?\s?a\.?$/i, 'Bachelor of Business Administration'],
+  [/^b\.?\s?e\.?$/i,        'Bachelor of Engineering'],
+  [/^m\.?\s?s\.?\s?c\.?$/i, 'Master of Science'],
+  [/^m\.?\s?s\.?$/i,        'Master of Science'],
+  [/^m\.?\s?b\.?\s?a\.?$/i, 'Master of Business Administration'],
+  [/^m\.?\s?phil\.?$/i,     'Master of Philosophy'],
+  [/^ph\.?\s?d\.?$/i,       'Doctor of Philosophy'],
+  [/^pharm[\s.-]?d\.?$/i,   'Doctor of Pharmacy'],
+  [/^d\.?\s?p\.?\s?t\.?$/i, 'Doctor of Physical Therapy'],
+];
+const formatDegreeTitle = (programName?: string | null): string => {
+  const name = String(programName || '').trim();
+  if (!name) return '';
+  if (/^(bachelor|master|doctor)\b/i.test(name)) return name;
+  const m = name.match(/^([A-Za-z.\-]+)\s*[-–:]?\s*(.*)$/);
+  if (!m) return name;
+  const full = DEGREE_ABBREVIATIONS.find(([re]) => re.test(m[1]))?.[1];
+  if (!full) return name;
+  let rest = m[2].trim();
+  // "BS (Computer Science)" -> "Computer Science"
+  if (/^\(.*\)$/.test(rest)) rest = rest.slice(1, -1).trim();
+  // "(Hons)" is an award type, not a discipline: keep it as a suffix.
+  let hons = false;
+  rest = rest.replace(/\s*\(?\b(hons|honours|honors)\b\.?\)?\s*/i, () => { hons = true; return ' '; }).trim();
+  // Drop a trailing program code such as "(BSCS)".
+  rest = rest.replace(/\s*\([A-Z0-9-]{2,10}\)\s*$/, '').trim();
+  const title = rest ? `${full} in ${rest}` : full;
+  return hons ? `${title} (Hons)` : title;
 };
 
 const areStudentsEqual = (reg1: string | null | undefined, reg2: string | null | undefined): boolean => {
@@ -745,7 +784,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
   // UI States
   // Which semester sections are expanded on the Transcript tab.
   const [openSemesters, setOpenSemesters] = useState<Record<string, boolean>>({});
-  // Official (sealed) transcript record on the Transcript tab; collapsed by default.
+  // Unofficial (sealed) transcript record on the Transcript tab; collapsed by default.
   const [showSealedRecord, setShowSealedRecord] = useState<boolean>(false);
   const [cloFilterCourseCode, setCloFilterCourseCode] = useState<string>('all');
   const [selectedSemester, setSelectedSemester] = useState<string>('all');
@@ -1346,9 +1385,12 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
   }, [activeStudent, programs]);
 
   const activeDepartment = useMemo(() => {
-    if (!activeProgram) return null;
-    return departments.find(d => d.id === activeProgram.departmentId) || null;
-  }, [activeProgram, departments]);
+    // Fall back to the department the student logged in with when the program
+    // can't be resolved, instead of a hardcoded "Department of Computing".
+    const deptId = activeProgram?.departmentId || activeStudent?.departmentId;
+    if (!deptId) return null;
+    return departments.find(d => d.id === deptId) || null;
+  }, [activeProgram, activeStudent, departments]);
 
   // Extract semester from course code dynamically (e.g. CMC111 -> 1st Semester, SEN212 -> 2nd Semester)
   const getCourseSemester = (courseCode: string, courseObj?: any): string => {
@@ -1744,6 +1786,18 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
     return Array.from(seen.values());
   }, [courses, studentBindings, activeRegNo, instructorCourses, rawStudentCourses, allInstructorCoursesState]);
 
+  // e.g. "Bachelor of Science in Computer Science". Uses the student's own
+  // program, or failing that the program of their enrolled courses (for a
+  // session that logged in before the API started sending programId).
+  const activeDegreeTitle = useMemo(() => {
+    let prog: any = activeProgram;
+    if (!prog) {
+      const pid = String(enrolledCoursesWithGrades.find((c: any) => c.programId)?.programId || '').toLowerCase();
+      prog = pid ? programs.find(p => String(p.id).toLowerCase() === pid) : null;
+    }
+    return prog ? formatDegreeTitle(prog.name) : '';
+  }, [activeProgram, enrolledCoursesWithGrades, programs]);
+
   // The CLO and GA tabs open on a course straight away (chosen from a
   // dropdown) instead of a grid of course cards, so keep a valid selection.
   useEffect(() => {
@@ -1925,7 +1979,10 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
         const crHrs = c.creditHours || 3;
         const pts = c.results?.points;
         const letter = c.results?.letterGrade;
-        if (pts !== undefined && letter !== undefined && letter !== '-') {
+        // 'Pending' (and '-' / empty) is not a grade. It used to be counted here
+        // with 0 points, dragging the printed semester GPA down: one B plus five
+        // pending courses printed as 0.50 while the CGPA said 3.00.
+        if (pts !== undefined && letter && letter !== '-' && letter !== 'Pending') {
           totalPointsProduct += pts * crHrs;
           totalCredits += crHrs;
           hasGrades = true;
@@ -1943,7 +2000,8 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
     Object.values(printAllCoursesBySemester).forEach((courses: any) => {
       courses.forEach((c: any) => {
         const grade = c.results?.letterGrade;
-        if (grade && grade !== 'F' && grade !== '-' && grade !== '') {
+        // Earned = passed. Pending courses were being counted as earned credits.
+        if (grade && grade !== 'F' && grade !== '-' && grade !== '' && grade !== 'Pending') {
           total += (c.creditHours || 3);
         }
       });
@@ -2006,66 +2064,93 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
       downloadBtn.disabled = true;
     }
 
-    // Save current layout styles of element to restore them perfectly afterward
-    const originalWidth = element.style.width;
-    const originalMaxWidth = element.style.maxWidth;
-    const originalMinHeight = element.style.minHeight;
-    const originalBoxShadow = element.style.boxShadow;
-    const originalBorder = element.style.border;
-    const originalBorderRadius = element.style.borderRadius;
+    // Save the inline styles we touch so the on-screen preview is restored exactly.
+    const touched = ['width', 'max-width', 'min-height', 'box-shadow', 'border', 'border-radius', 'padding', 'margin'];
+    const saved = touched.map(prop => [prop, element.style.getPropertyValue(prop), element.style.getPropertyPriority(prop)] as const);
 
     try {
-      // Temporarily set the element to a standard crisp A4 portrait width (800px)
-      // This preserves exact typography and proportions without squishing or down-scaling elements.
+      // Lay the transcript out at A4-ish width, without the preview's card chrome
+      // or its forced full-page height. Page margins are added in the PDF itself.
       element.style.setProperty('width', '800px', 'important');
       element.style.setProperty('max-width', 'none', 'important');
-      element.style.setProperty('min-height', 'auto', 'important');
+      element.style.setProperty('min-height', '0', 'important');
       element.style.setProperty('box-shadow', 'none', 'important');
       element.style.setProperty('border', 'none', 'important');
       element.style.setProperty('border-radius', '0px', 'important');
-
-      // Force layout calculation refresh
-      const _reflow = element.offsetHeight;
-
-      // Yield a tiny execution macrotask to allow Chrome rendering thread to flush computed coordinates
+      element.style.setProperty('padding', '0px', 'important');
+      // The preview centres the sheet with mx-auto. The capture copies COMPUTED
+      // styles, so that centring margin (e.g. 85px) was baked into the image,
+      // pushing the content right and cutting off its right edge.
+      element.style.setProperty('margin', '0px', 'important');
+      void element.offsetHeight;
       await new Promise(resolve => setTimeout(resolve, 150));
 
-      const capturedWidth = 800;
-      const capturedHeight = element.scrollHeight || element.offsetHeight || 1130;
+      // FLEXIBLE WIDTH. This used to capture exactly 800px, so anything wider
+      // (a long department or course name) was cut off at the right edge. If the
+      // content needs more room, render wider; it is scaled to fit the page.
+      const renderWidth = Math.max(800, Math.ceil(element.scrollWidth));
+      if (renderWidth > 800) {
+        element.style.setProperty('width', `${renderWidth}px`, 'important');
+        void element.offsetHeight;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      const totalHeight = Math.ceil(element.scrollHeight);
 
-      // Capture high-resolution image representation forcing exact 800px layout width
-      const dataUrl = await toPng(element, {
-        quality: 1.0,
-        pixelRatio: 2.5, // captures ultra-sharp vector text and values
+      // Safe places to start a new page: the bottom of every table row and of
+      // each top-level block. Pages used to be cut at fixed heights, which could
+      // slice a row of text in half across two pages.
+      const originTop = element.getBoundingClientRect().top;
+      const breakPoints = Array.from(element.querySelectorAll('tr, :scope > *'))
+        .map(el => Math.round((el as HTMLElement).getBoundingClientRect().bottom - originTop))
+        .filter(y => y > 0 && y < totalHeight)
+        .sort((x, y) => x - y);
+
+      const PIXEL_RATIO = 2;
+      const canvas = await toCanvas(element, {
+        pixelRatio: PIXEL_RATIO,
         backgroundColor: '#ffffff',
-        width: capturedWidth,
-        height: capturedHeight
+        width: renderWidth,
+        height: totalHeight,
       });
 
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pageHeight = 297; // A4 height in mm
-      const imgWidth = 210; // A4 width in mm
-      
-      const imgHeight = (capturedHeight * imgWidth) / capturedWidth; // scales naturally to preserve original aspect ratio
+      // A4 portrait with 12mm margins on every page. JPEG + compression instead
+      // of a lossless PNG keeps the file small (the PNG approach produced files
+      // tens of MB in size for the mark sheet).
+      const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true });
+      const MARGIN = 12;
+      const contentWmm = 210 - MARGIN * 2;
+      const contentHmm = 297 - MARGIN * 2;
+      const pxPerMm = renderWidth / contentWmm;          // layout px per mm on paper
+      const pageHeightPx = Math.floor(contentHmm * pxPerMm);
 
-      let heightLeft = imgHeight;
-      let position = 0;
+      let y = 0;
+      let first = true;
+      while (y < totalHeight - 1) {
+        let end = Math.min(y + pageHeightPx, totalHeight);
+        if (end < totalHeight) {
+          // Pull the break up to the last row/block boundary that still fits,
+          // as long as that leaves a reasonably full page.
+          const candidates = breakPoints.filter(bp => bp > y + pageHeightPx * 0.4 && bp <= end);
+          if (candidates.length) end = candidates[candidates.length - 1];
+        }
+        const sliceHeight = end - y;
 
-      // Add Page 1
-      pdf.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = Math.ceil(sliceHeight * PIXEL_RATIO);
+        const ctx = pageCanvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas 2D context unavailable');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        ctx.drawImage(canvas, 0, Math.floor(y * PIXEL_RATIO), canvas.width, pageCanvas.height, 0, 0, canvas.width, pageCanvas.height);
 
-      // Slice overflow contents onto successive pages natively
-      let pageNum = 1;
-      while (heightLeft > 5) {
-        position = - (pageNum * pageHeight);
-        pdf.addPage();
-        pdf.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-        pageNum++;
+        if (!first) pdf.addPage();
+        first = false;
+        pdf.addImage(pageCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', MARGIN, MARGIN, contentWmm, sliceHeight / pxPerMm, undefined, 'FAST');
+        y = end;
       }
 
-      pdf.save(`Official_Academic_Transcript_${activeStudent?.regNo || 'Student'}.pdf`);
+      pdf.save(`Unofficial_Academic_Transcript_${activeStudent?.regNo || 'Student'}.pdf`);
     } catch (error) {
       console.error("PDF download compilation error:", error);
       // Fallback to native print
@@ -2077,12 +2162,10 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
       }
 
       // Restore pristine on-screen state
-      element.style.width = originalWidth;
-      element.style.maxWidth = originalMaxWidth;
-      element.style.minHeight = originalMinHeight;
-      element.style.boxShadow = originalBoxShadow;
-      element.style.border = originalBorder;
-      element.style.borderRadius = originalBorderRadius;
+      saved.forEach(([prop, value, priority]) => {
+        if (value) element.style.setProperty(prop, value, priority);
+        else element.style.removeProperty(prop);
+      });
     }
   };
 
@@ -2316,7 +2399,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                 </div>
                 <p className="text-xs font-mono font-bold text-slate-400 uppercase tracking-tight">{activeStudent.regNo}</p>
                 <p className="text-xs text-slate-500 font-medium">
-                  {activeProgram?.name || 'Bachelor of Science'} • <strong className="text-slate-700">{activeStudent.semester || '4th'} Semester</strong>
+                  {activeDegreeTitle ? `${activeDegreeTitle} • ` : ''}<strong className="text-slate-700">{activeStudent.semester || '4th'} Semester</strong>
                 </p>
               </div>
             </div>
@@ -2430,7 +2513,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                         <ChevronDown className={`h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200 ${showSealedRecord ? 'rotate-180' : ''}`} />
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                            Official Transcript Record
+                            Unofficial Transcript Record
                             <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">Sealed</span>
                           </p>
                           <p className="text-xs text-slate-500">{finalTranscripts.length} finalized course{finalTranscripts.length === 1 ? '' : 's'} · permanent record</p>
@@ -2830,21 +2913,47 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
           #transcript-print-area, #transcript-print-area * {
             visibility: visible !important;
           }
+          /* The transcript modal used to carry print:hidden (display:none), so
+             nothing inside it could print and the Print button produced a blank
+             page. Instead, flatten its overlay/scroll containers so the sheet
+             flows across as many pages as it needs, and hide only its toolbar. */
+          .tx-print-overlay, .tx-print-panel, .tx-print-scroll {
+            position: static !important;
+            display: block !important;
+            overflow: visible !important;
+            height: auto !important;
+            max-height: none !important;
+            transform: none !important;
+            background: none !important;
+            backdrop-filter: none !important;
+            padding: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+          }
+          .tx-print-chrome { display: none !important; }
           #transcript-print-area {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
+            position: static !important;
             width: 100% !important;
             height: auto !important;
             display: block !important;
-            padding: 0 !important;
+            /* The page's breathing room lives here, not in @page: a non-zero
+               @page margin is where the browser prints its own header/footer
+               (page URL, date, "1/3"). */
+            padding: 12mm !important;
             margin: 0 !important;
+            min-height: 0 !important;  /* was min-h-[297mm]: forced a blank extra page */
+            max-width: none !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
             background: white !important;
             color: black !important;
           }
+          #transcript-print-area thead { display: table-header-group; }
+          #transcript-print-area tr { break-inside: avoid; page-break-inside: avoid; }
           @page {
             size: portrait;
-            margin: 15mm;
+            margin: 0;
           }
         }
       `}</style>
@@ -2852,21 +2961,21 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
       {/* TRANSCRIPT PREVIEW MODAL */}
       <AnimatePresence>
         {isPrintingTranscript && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50 overflow-hidden font-sans print:hidden">
+          <div className="tx-print-overlay fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50 overflow-hidden font-sans">
             <motion.div
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
-              className="bg-slate-100 border border-slate-250 rounded-2xl w-full max-w-5xl h-[95vh] flex flex-col overflow-hidden shadow-2xl"
+              className="tx-print-panel bg-slate-100 border border-slate-250 rounded-2xl w-full max-w-5xl h-[95vh] flex flex-col overflow-hidden shadow-2xl"
             >
               {/* Top Control Bar */}
-              <div className="bg-white border-b border-slate-200 px-5 py-4 flex items-center justify-between shrink-0">
+              <div className="tx-print-chrome bg-white border-b border-slate-200 px-5 py-4 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2">
                   <div className="p-1.5 bg-indigo-50 rounded-lg border border-indigo-100">
                     <FileText className="w-5 h-5 text-indigo-600" />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-sm text-slate-900 uppercase tracking-tight">Official Transcript Report Builder</h3>
+                    <h3 className="font-extrabold text-sm text-slate-900 uppercase tracking-tight">Unofficial Transcript Report Builder</h3>
                     <p className="text-[10px] text-slate-500 font-mono mt-0.5">Verify academic ledger snapshot limits and export perfectly aligned vector PDFs</p>
                   </div>
                 </div>
@@ -2896,7 +3005,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
               </div>
 
               {/* Scrollable Viewport */}
-              <div className="flex-1 overflow-auto p-6 bg-slate-200/50">
+              <div className="tx-print-scroll flex-1 overflow-auto p-6 bg-slate-200/50">
                 <div 
                   id="transcript-print-area" 
                   className="max-w-[210mm] mx-auto bg-white shadow-2xl border border-slate-300 rounded-xl p-8 min-h-[297mm] text-left text-black font-sans leading-relaxed antialiased"
@@ -2909,21 +3018,26 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                         className="h-16 w-auto object-contain mb-2"
                         referrerPolicy="no-referrer"
                       />
-                      <h1 className="text-lg font-black tracking-widest text-black uppercase font-mono animate-pulse">
+                      <h1 className="text-lg font-black tracking-widest text-black uppercase font-mono">
                         INCOMPLETE TRANSCRIPT
                       </h1>
                     </div>
 
-                    {/* Personal Details Row */}
-                    <div className="grid grid-cols-2 gap-4 mb-8 text-[11px] font-mono border-b border-black/20 pb-4">
-                      <div className="space-y-1.5">
-                        <div><span className="font-bold inline-block w-32 text-slate-500 text-left">STUDENT NAME:</span> <span className="font-extrabold text-black uppercase">{activeStudent?.name}</span></div>
-                        <div><span className="font-bold inline-block w-32 text-slate-500 text-left">REG NUMBER:</span> <span className="font-extrabold text-black uppercase">{activeStudent?.regNo || activeRegNo}</span></div>
-                      </div>
-                      <div className="space-y-1.5 text-right">
-                        <div><span className="font-bold inline-block w-32 text-slate-500 text-left">DEPARTMENT:</span> <span className="font-extrabold text-black uppercase">{activeDepartment?.name || 'Department of Computing'}</span></div>
-                        <div><span className="font-bold inline-block w-32 text-slate-500 text-left">PROGRAM:</span> <span className="font-extrabold text-black uppercase">{activeProgram?.name || 'BS (Computer Science)'}</span></div>
-                      </div>
+                    {/* Personal Details. Label/value pairs in an auto-sized grid so long
+                        values (department, program) wrap cleanly instead of
+                        overflowing a fixed-width label column. */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5 mb-8 text-[11px] font-mono border-b border-black/20 pb-4">
+                      {[
+                        ['STUDENT NAME', activeStudent?.name],
+                        ['DEPARTMENT', activeDepartment?.name || '—'],
+                        ['REG NUMBER', activeStudent?.regNo || activeRegNo],
+                        ['PROGRAM', activeDegreeTitle || '—'],
+                      ].map(([label, value]) => (
+                        <div key={label as string} className="grid grid-cols-[7.5rem_1fr] gap-2 items-baseline">
+                          <span className="font-bold text-slate-500">{label}:</span>
+                          <span className="font-extrabold text-black uppercase break-words">{value}</span>
+                        </div>
+                      ))}
                     </div>
 
                     {/* Courses Table */}
@@ -2953,7 +3067,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                               {coursesInSem.map((course: any, cIdx: number) => (
                                 <tr key={`print-${semKey}-${course.code}-${course.id || ''}-${cIdx}`} className="border-b border-black/10">
                                   <td className="py-1.5 pr-4 font-bold">{course.code}</td>
-                                  <td className="py-1.5 pr-4 uppercase">{course.title}</td>
+                                  <td className="py-1.5 pr-4 uppercase break-words">{course.title}</td>
                                   <td className="py-1.5 pr-4 text-center">{course.creditHours || 3}</td>
                                   <td className="py-1.5 text-right font-bold">{course.results?.letterGrade || '-'}</td>
                                 </tr>
@@ -2975,12 +3089,14 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
 
                     {/* Bottom Total Credits & CGPA Footer */}
                     <div className="mt-8 pt-6 border-t-2 border-black flex justify-between items-start text-[11px] font-mono font-bold">
-                      <div className="space-y-1 animate-pulse">
+                      {/* No animate-pulse here (or on the title): the PDF capture could
+                          catch the text mid-fade, so it came out faint. */}
+                      <div className="space-y-1">
                         <div>TOTAL EARNED CREDITS: {printTotalEarnedCredits}</div>
                         <div className="text-xs">CGPA: {GPAStats.cgpa.toFixed(2)}</div>
                       </div>
                       <div className="text-right text-[8px] text-slate-500 font-mono">
-                        * IQRA UNIVERSITY OFFICIAL PORTAL TRANSCRIPT SYSTEM *
+                        * IQRA UNIVERSITY UNOFFICIAL PORTAL TRANSCRIPT SYSTEM *
                         <br />
                         DATE PRINTED: {new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase()}
                       </div>
