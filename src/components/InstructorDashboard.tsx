@@ -2624,6 +2624,19 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
     // directly and let the browser print this page.
     setIsDirectPrinting(true);
 
+    // Leave the print view mounted until the browser is actually finished with
+    // it. window.print() returns immediately in Chrome — the preview dialog is
+    // asynchronous — so tearing the view down right after the call unmounted
+    // the document while the dialog was still open, and "Save as PDF" then
+    // wrote nothing because there was no longer anything to rasterise.
+    // 'afterprint' fires once the dialog is closed, whether the user saved or
+    // cancelled, which is the correct moment to restore the report builder.
+    const handleAfterPrint = () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      setIsDirectPrinting(false);
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+
     // Let React commit the print view before handing off to the browser.
     setTimeout(() => {
       try {
@@ -2631,8 +2644,8 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
         window.print();
       } catch (e) {
         console.error("Print failed:", e);
-      } finally {
-        // Return to the report builder once the print dialog is dismissed.
+        // Only unwind here — if print() never opened, no 'afterprint' is coming.
+        window.removeEventListener('afterprint', handleAfterPrint);
         setIsDirectPrinting(false);
       }
     }, 350);
