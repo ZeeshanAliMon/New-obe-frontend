@@ -782,7 +782,7 @@ export const apiService = {
     }, 8000);
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      const errMsg = errData.detail || errData.error || errData.message || 'Enrollment sync failed';
+      const errMsg = errData.detail || errData.error || errData.message || `Enrollment sync failed (server error ${res.status})`;
       throw new Error(errMsg);
     }
   },
