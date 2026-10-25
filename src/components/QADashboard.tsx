@@ -1567,7 +1567,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
               onClick={() => { setActiveModule('more_reports'); setOpenMenu(null); }}
               className={`px-3 py-1 text-xs font-sans font-semibold rounded cursor-pointer transition-all ${activeModule === 'more_reports' ? 'bg-indigo-900 text-white shadow-sm font-bold' : 'text-slate-700 hover:bg-slate-200 hover:text-slate-900'}`}
             >
-              More Reports
+              Reports
             </button>
 
             {/* ABOUT MENU */}
@@ -3742,26 +3742,15 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                 MORE REPORTS MODULE
             ═══════════════════════════════════════════════════════════════ */}
             {activeModule === 'more_reports' && (
-              <div className="space-y-6 max-w-7xl mx-auto animate-in duration-200 fade-in-25">
+              <div className="space-y-4 max-w-7xl mx-auto animate-in duration-200 fade-in-25">
 
-                {/* Header */}
-                <div className="bg-gradient-to-br from-[#1e1b4b] to-[#312e81] rounded-3xl p-6 text-white shadow-md relative overflow-hidden">
-                  <div className="absolute right-0 top-0 bottom-0 opacity-10 select-none pointer-events-none flex items-center pr-10">
-                    <PieChart className="w-48 h-48 text-white" />
+                {/* Report type + filters: one compact card */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <div className="mb-3">
+                    <h2 className="text-lg font-bold text-slate-900">Reports</h2>
+                    <p className="text-xs text-slate-500">Institutional reports for HEC compliance, accreditation and quality assurance.</p>
                   </div>
-                  <div className="relative z-10 space-y-1">
-                    <span className="text-[10px] font-mono font-bold tracking-widest text-indigo-300 bg-indigo-500/20 border border-indigo-400/30 px-3 py-1 rounded-full uppercase">
-                      QA Analytics Suite
-                    </span>
-                    <h2 className="text-xl font-black mt-2">More Reports</h2>
-                    <p className="text-indigo-200 text-xs">Generate institutional reports for HEC compliance, accreditation, and academic quality assurance.</p>
-                  </div>
-                </div>
-
-                {/* Report Type Selector */}
-                <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
-                  <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Select Report Type</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                  <div className="flex flex-wrap gap-1.5">
                     {[
                       { id: 'ga_program',            label: 'GA Attainment\nby Program',       icon: <Award className="w-5 h-5" />,          color: 'indigo' },
                       { id: 'ga_batch',              label: 'GA Attainment\nby Batch',          icon: <Users className="w-5 h-5" />,          color: 'violet' },
@@ -3777,22 +3766,20 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                       <button
                         key={rt.id}
                         onClick={() => { setMoreReportType(rt.id as any); setMoreReportData(null); setMoreReportError(null); }}
-                        className={`flex flex-col items-center gap-2 p-3 rounded-2xl border-2 text-center transition-all text-xs font-bold whitespace-pre-line leading-tight
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold whitespace-nowrap cursor-pointer transition-all
                           ${moreReportType === rt.id
-                            ? 'border-indigo-600 bg-indigo-50 text-indigo-800 shadow-sm'
-                            : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-indigo-300 hover:bg-indigo-50/50 hover:text-indigo-700'
+                            ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300 hover:bg-indigo-50/60 hover:text-indigo-700'
                           }`}
                       >
-                        <span className={moreReportType === rt.id ? 'text-indigo-600' : 'text-slate-400'}>{rt.icon}</span>
-                        {rt.label}
+                        <span className={`[&>svg]:w-3.5 [&>svg]:h-3.5 ${moreReportType === rt.id ? 'text-white' : 'text-slate-400'}`}>{rt.icon}</span>
+                        {String(rt.label).replace('\n', ' ')}
                       </button>
                     ))}
                   </div>
-                </div>
 
-                {/* Filters Panel */}
-                <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
-                  <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Filters</h3>
+                {/* Filters (same card) */}
+                <div className="mt-4 pt-4 border-t border-slate-100">
                   <div className="flex flex-wrap gap-4 items-end">
 
                     {/* Program — needed for most reports */}
@@ -3974,6 +3961,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                       }
                     </button>
                   </div>
+                </div>
                 </div>
 
                 {/* Error */}
