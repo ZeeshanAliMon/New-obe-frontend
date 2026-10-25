@@ -478,6 +478,20 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
       // 1. Load basic OBE data from service or localStorage
       let obData;
       const isBackend = !!localStorage.getItem('access');
+
+      // These requests don't depend on each other, so start them all now and
+      // read the results below. They used to run one after another, so the
+      // "Initializing" screen lasted the SUM of every round trip (slow on a
+      // remote server) instead of the longest single one. Each result keeps the
+      // exact error handling it had before.
+      const settle = <T,>(p: Promise<T>): Promise<{ ok: boolean; value: T; error: any }> =>
+        p.then((value) => ({ ok: true, value, error: null }), (error: any) => ({ ok: false, value: undefined as unknown as T, error }));
+      const pProfile = settle(apiService.getDeptAdminProfile());
+      const pStudents = settle(apiService.getStudents());
+      const pTeachers = settle(apiService.getTeachers());
+      const pPlans = settle(apiService.getSemesterPlans());
+      const pAssignments = settle(apiService.getCourseAssignments());
+
       try {
         obData = await apiService.getAllData();
       } catch (err: any) {
@@ -513,20 +527,25 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
 
       // 2. Load admin profile from backend
       try {
-        const profile = await apiService.getDeptAdminProfile();
-        setAdminProfile(profile);
+        const rProfile = await pProfile;
+        if (!rProfile.ok) throw rProfile.error;
+        setAdminProfile(rProfile.value);
       } catch (err) {
         console.warn("Failed to fetch admin profile from backend, using adminName detection.", err);
       }
 
       // 3. Load Students
-      const studentList = await apiService.getStudents();
+      const rStudents = await pStudents;
+      if (!rStudents.ok) throw rStudents.error;
+      const studentList = rStudents.value;
       setStudents(studentList);
 
       // 4. Load Teachers from backend or fallback to Local Storage
       let loadedTeachers: Teacher[] = [];
       try {
-        const fetchedTeachers = await apiService.getTeachers();
+        const rTeachers = await pTeachers;
+        if (!rTeachers.ok) throw rTeachers.error;
+        const fetchedTeachers = rTeachers.value;
         if (Array.isArray(fetchedTeachers)) {
           loadedTeachers = fetchedTeachers.map((t: any) => ({
             ...t,
@@ -546,7 +565,9 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
       // 5. Load Semester Plans from backend or fallback to Local Storage
       let loadedPlans: SemesterPlan[] = [];
       try {
-        const fetchedPlans = await apiService.getSemesterPlans();
+        const rPlans = await pPlans;
+        if (!rPlans.ok) throw rPlans.error;
+        const fetchedPlans = rPlans.value;
         if (Array.isArray(fetchedPlans)) {
           loadedPlans = fetchedPlans.map((p: any) => ({
             programId: p.programId,
@@ -575,7 +596,9 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
       // 7. Load Teacher Course Assignments from backend or fallback to Local Storage
       let loadedAssignments: TeacherCourseAssignment[] = [];
       try {
-        const fetchedAssignments = await apiService.getCourseAssignments();
+        const rAssignments = await pAssignments;
+        if (!rAssignments.ok) throw rAssignments.error;
+        const fetchedAssignments = rAssignments.value;
         if (Array.isArray(fetchedAssignments)) {
           loadedAssignments = fetchedAssignments.map((a: any) => ({
             id: a.courseId || a.id || a.assignment_id || a.assignmentId,
