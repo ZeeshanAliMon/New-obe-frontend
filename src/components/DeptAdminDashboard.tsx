@@ -643,10 +643,16 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
             }
 
             // Merge dbBindings into activeBindings (ensuring no duplicates, matching with areRegNosEqual)
+            // Hash lookup (was combined.some() per binding: with a few thousand
+            // server enrollments that fuzzy scan was millions of comparisons and
+            // froze the loading screen).
+            const bindingKey = (b: StudentCourseBinding) => `${normalizeRegNo(b.studentRegNo)}|${String(b.courseCode).toLowerCase().trim()}`;
             const combined = [...activeBindings];
+            const seenKeys = new Set(combined.map(bindingKey));
             dbBindings.forEach(dbb => {
-              const exists = combined.some(cb => areRegNosEqual(cb.studentRegNo, dbb.studentRegNo) && cb.courseCode.toLowerCase().trim() === dbb.courseCode.toLowerCase().trim());
-              if (!exists) {
+              const k = bindingKey(dbb);
+              if (!seenKeys.has(k)) {
+                seenKeys.add(k);
                 combined.push(dbb);
               }
             });
@@ -686,7 +692,9 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
       setTeacherAssignments(loadedAssignments);
 
       // Automatically sync to instructor courses on load of Admin dashboard
-      syncToInstructorCourses(obData.courses || [], loadedTeachers, loadedAssignments, activeBindings, studentList);
+      // Deferred a tick so the dashboard appears first; the sync is background work.
+      const courseSnapshot = obData.courses || [];
+      setTimeout(() => syncToInstructorCourses(courseSnapshot, loadedTeachers, loadedAssignments, activeBindings, studentList), 0);
 
     } catch (err: any) {
       console.error(err);
@@ -732,6 +740,27 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     });
     const deduplicatedAssignments = Array.from(uniqueAssignmentsMap.values());
 
+    // Which students are bound to each course code. Matching a binding to a
+    // student uses the fuzzy areRegNosEqual, so do it once per DISTINCT binding
+    // registration number (≤ number of students) instead of for every
+    // student × binding × assignment, which was tens of millions of checks.
+    const regMatchCache = new Map<string, Set<Student>>();
+    const studentsMatchingReg = (reg: string): Set<Student> => {
+      let hit = regMatchCache.get(reg);
+      if (!hit) {
+        hit = new Set(currentStudents.filter(st => areRegNosEqual(reg, st.regNo)));
+        regMatchCache.set(reg, hit);
+      }
+      return hit;
+    };
+    const boundStudentsByCode = new Map<string, Set<Student>>();
+    currentBindings.forEach(b => {
+      const codeKey = normalizeCourseCode(b.courseCode);
+      let set = boundStudentsByCode.get(codeKey);
+      if (!set) { set = new Set(); boundStudentsByCode.set(codeKey, set); }
+      studentsMatchingReg(b.studentRegNo).forEach(st => set!.add(st));
+    });
+
     const updatedInstructorCourses: InstructorCourse[] = deduplicatedAssignments.map(assignment => {
       const teacher = currentTeachers.find(t => matchTeacher(t, assignment.teacherId));
       const assignmentProgClean = assignment.programId ? String(assignment.programId).trim().toLowerCase() : '';
@@ -764,14 +793,9 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
       });
 
       // Find matching students for this course based on bindings
+      const boundHere = boundStudentsByCode.get(normalizeCourseCode(assignment.courseCode));
       const courseStudents = currentStudents
-        .filter(s => {
-          const isBound = currentBindings.some(b => 
-            normalizeCourseCode(b.courseCode) === normalizeCourseCode(assignment.courseCode) &&
-            areRegNosEqual(b.studentRegNo, s.regNo)
-          );
-          return isBound;
-        })
+        .filter(s => !!boundHere && boundHere.has(s))
         .map(s => {
           // Preserve existing marks if student was already in this course
           const existingCourse = existingInstructorCourses.find(ec => ec.id === uniqId) || 
