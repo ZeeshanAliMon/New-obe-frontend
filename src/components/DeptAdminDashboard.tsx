@@ -578,7 +578,7 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
         const fetchedAssignments = await apiService.getCourseAssignments();
         if (Array.isArray(fetchedAssignments)) {
           loadedAssignments = fetchedAssignments.map((a: any) => ({
-            id: a.id || a.assignment_id || a.assignmentId,
+            id: a.courseId || a.id || a.assignment_id || a.assignmentId,
             teacherId: a.teacherId || a.instructor || a.employeeId,
             courseCode: a.courseCode || a.course_code || a.code,
             programId: a.programId || a.program_id || a.program,
@@ -715,10 +715,15 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
       }
       const uniqId = `course-assigned-${assignment.courseCode}-${employeeId}-${finalProgramId}-${academicYear}`;
 
-      assignmentMap.set(uniqId, {
+      // The id the backend knows this course by (falls back to the guessed one for
+      // assignments that have no backend id yet).
+      const effectiveId = assignment.id ? String(assignment.id) : uniqId;
+      assignmentMap.set(effectiveId, {
         teacherId: employeeId,
         courseCode: assignment.courseCode,
-        programId: finalProgramId || undefined,
+        // The assignment's OWN program (may be none). Re-creating a missing
+        // assignment with a guessed program would make a different course.
+        programId: assignment.programId || undefined,
         academicYear: academicYear || 'Fall-2024'
       });
 
@@ -853,6 +858,7 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
 
     // Sync enrollments to backend sequentially to avoid SQLite database locks (500 errors)
     (async () => {
+      const failures: string[] = [];
       for (const ic of updatedInstructorCourses) {
         if (ic.students && ic.students.length > 0) {
           try {
@@ -887,10 +893,18 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
                 }
               }
             }
-            // If self-healing failed or was not applicable, trigger warning toast
-            triggerNotification(`Enrollment sync warning: ${e.message}`, true);
+            // Self-healing failed or didn't apply: remember it, report once below.
+            failures.push(`${ic.code}: ${e.message}`);
           }
         }
+      }
+      if (failures.length > 0) {
+        triggerNotification(
+          failures.length === 1
+            ? `Enrollment was not saved to the server — ${failures[0]}`
+            : `Enrollment was not saved for ${failures.length} courses (e.g. ${failures[0]}). Please retry.`,
+          true
+        );
       }
     })();
   };
@@ -1595,8 +1609,8 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
         selectedProgramForTeacher || undefined,
         assignmentAcademicYear
       );
-      if (resData && resData.id) {
-        assignmentId = resData.id;
+      if (resData && (resData.courseId || resData.id)) {
+        assignmentId = resData.courseId || resData.id;
       }
     } catch (err: any) {
       console.error(err);
