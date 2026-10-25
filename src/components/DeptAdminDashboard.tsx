@@ -629,6 +629,19 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
             });
             console.log(`[DEBUG DeptAdmin] Recovered ${dbBindings.length} real student bindings from database assignments.`);
             
+            // The backend now returns each assignment's real roster, so it is the
+            // source of truth for every course that HAS an assignment. Drop
+            // locally remembered bindings for those courses first, otherwise a
+            // stale browser copy (e.g. old demo enrollments) gets merged back in
+            // and re-pushed to the server on the next sync. Bindings for courses
+            // with no assignment yet stay as they are. Skipped when the server
+            // doesn't send rosters (older backend), so nothing is lost there.
+            const backendSendsRosters = fetchedAssignments.length > 0 && fetchedAssignments.every((a: any) => Array.isArray(a.students));
+            if (backendSendsRosters) {
+              const assignedCodes = new Set(fetchedAssignments.map((a: any) => normalizeCourseCode(String(a.courseCode || a.course_code || a.code || ''))));
+              activeBindings = activeBindings.filter(b => !assignedCodes.has(normalizeCourseCode(b.courseCode)));
+            }
+
             // Merge dbBindings into activeBindings (ensuring no duplicates, matching with areRegNosEqual)
             const combined = [...activeBindings];
             dbBindings.forEach(dbb => {
