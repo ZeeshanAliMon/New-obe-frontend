@@ -2035,6 +2035,22 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
 
     syncToInstructorCourses(courses, teachers, teacherAssignments, updatedBindings, students);
 
+    // Remember this was a deliberate enrollment, so a curriculum course from
+    // another semester still counts as Studying and survives auto-enroll cleanup.
+    const updatedStatuses = {
+      ...studentCourseStatuses,
+      [selectedStudentRegNo]: {
+        ...(studentCourseStatuses[selectedStudentRegNo] || {}),
+        [selectedCourseCodeForStudent]: 'studying' as const
+      },
+      [normalizeRegNo(selectedStudentRegNo)]: {
+        ...(studentCourseStatuses[normalizeRegNo(selectedStudentRegNo)] || {}),
+        [normalizeCourseCode(selectedCourseCodeForStudent)]: 'studying' as const
+      }
+    };
+    setStudentCourseStatuses(updatedStatuses);
+    localStorage.setItem('IQRA_OBE_STUDENT_COURSE_STATUSES', JSON.stringify(updatedStatuses));
+
     const studentObj = students.find(s => areRegNosEqual(s.regNo, selectedStudentRegNo));
     triggerNotification(`Manually enrolled ${studentObj?.name || selectedStudentRegNo} in course ${selectedCourseCodeForStudent}`);
     setSelectedCourseCodeForStudent('');
@@ -2055,8 +2071,29 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
   };
 
   // Student academic pathway course status helpers
+  const getStatusOverride = (studentRegNo: string, courseCode: string) => {
+    const studentOverrides = studentCourseStatuses[studentRegNo] || studentCourseStatuses[normalizeRegNo(studentRegNo)];
+    return studentOverrides ? (studentOverrides[courseCode] || studentOverrides[normalizeCourseCode(courseCode)]) : undefined;
+  };
+
+  // True when the course belongs to the student's program curriculum but to a
+  // DIFFERENT semester than the one the student is in. A binding for such a
+  // course is only a real enrollment if the admin explicitly chose it
+  // (Repeat / Enroll Early); otherwise it is a stale enrollment, e.g. a student
+  // who ended up on every curriculum course's roster.
+  const isOffSemesterCurriculumCourse = (student: Student, courseCode: string): boolean => {
+    const codeKey = normalizeCourseCode(courseCode);
+    const coursePlans = semesterPlans.filter(
+      p => areProgramsCompatible(p.programId, student.programId) && p.courseCodes.some(cc => normalizeCourseCode(cc) === codeKey)
+    );
+    if (coursePlans.length === 0) return false; // elective / outside course
+    const studentSem = String(student.semester || '1st').trim().toLowerCase();
+    return !coursePlans.some(p => String(p.semester || '').trim().toLowerCase() === studentSem);
+  };
+
   const getCourseStatus = (studentRegNo: string, courseCode: string): 'studied' | 'studying' | 'failed' | 'later' | 'deferred' => {
     const student = students.find(s => areRegNosEqual(s.regNo, studentRegNo));
+    const overrideStatus = getStatusOverride(studentRegNo, courseCode);
 
     // 1. Is it currently bound/enrolled? If so, check if there is an active teacher assigned to this course.
     const hasTeacherAssigned = teacherAssignments.some(
@@ -2064,19 +2101,16 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     );
 
     const isStudying = studentBindings.some(
-      b => areRegNosEqual(b.studentRegNo, studentRegNo) && 
+      b => areRegNosEqual(b.studentRegNo, studentRegNo) &&
            normalizeCourseCode(b.courseCode) === normalizeCourseCode(courseCode)
     );
-    if (isStudying && hasTeacherAssigned) return 'studying';
+    const isGenuineEnrollment = !student || overrideStatus === 'studying' || !isOffSemesterCurriculumCourse(student, courseCode);
+    if (isStudying && hasTeacherAssigned && isGenuineEnrollment) return 'studying';
 
     // 2. Is there an explicit override?
-    const studentOverrides = studentCourseStatuses[studentRegNo] || studentCourseStatuses[normalizeRegNo(studentRegNo)];
-    if (studentOverrides) {
-      const overrideStatus = studentOverrides[courseCode] || studentOverrides[normalizeCourseCode(courseCode)];
-      // If override is 'studying' but it's not in bindings anymore, it means it was unenrolled, so treat as deferred/failed/etc.
-      if (overrideStatus && overrideStatus !== 'studying') {
-        return overrideStatus;
-      }
+    // If override is 'studying' but it's not in bindings anymore, it means it was unenrolled, so treat as deferred/failed/etc.
+    if (overrideStatus && overrideStatus !== 'studying') {
+      return overrideStatus;
     }
 
     // 3. Fallback to default calculation based on student's current semester vs course's semester
