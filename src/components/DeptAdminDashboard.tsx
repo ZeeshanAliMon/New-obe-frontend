@@ -711,7 +711,10 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     currentTeachers: Teacher[],
     currentAssignments: TeacherCourseAssignment[],
     currentBindings: StudentCourseBinding[],
-    currentStudents: Student[]
+    currentStudents: Student[],
+    // Course codes whose roster must be sent even if it is now EMPTY (a reset
+    // can leave a course with nobody; the server only clears it if told so).
+    forceSyncCodes?: Set<string>
   ) => {
     // 1. Get existing InstructorCourses list
     let existingInstructorCourses: InstructorCourse[] = [];
@@ -920,7 +923,7 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     (async () => {
       const failures: string[] = [];
       for (const ic of updatedInstructorCourses) {
-        if (ic.students && ic.students.length > 0) {
+        if ((ic.students && ic.students.length > 0) || forceSyncCodes?.has(normalizeCourseCode(ic.code))) {
           try {
             await apiService.enrollStudents(
               ic.id,
@@ -1876,6 +1879,84 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     setSemesterPlans(updatedPlans);
     localStorage.setItem('IQRA_OBE_SEMESTER_PLANS', JSON.stringify(updatedPlans));
     triggerNotification(`Removed course ${code} from ${selectedPlanProg.toUpperCase()} ${selectedPlanSem} plan.`);
+  };
+
+  // Courses a student is bound to that are NOT in the semester plan of their own
+  // program + current semester (e.g. demo data that enrolled everyone in every
+  // course). Students with no plan for their semester are left alone.
+  const getOffPlanBindings = (student: Student): StudentCourseBinding[] => {
+    const sem = String(student.semester || '1st').trim().toLowerCase();
+    const plan = semesterPlans.find(p =>
+      areProgramsCompatible(p.programId, String(student.programId || '').trim().toLowerCase()) &&
+      String(p.semester || '').trim().toLowerCase() === sem
+    );
+    if (!plan) return [];
+    const allowed = new Set(plan.courseCodes.map(c => normalizeCourseCode(c)));
+    return studentBindings.filter(b =>
+      areRegNosEqual(b.studentRegNo, student.regNo) && !allowed.has(normalizeCourseCode(b.courseCode))
+    );
+  };
+
+  // Students (in this department) that have off-plan courses, for the bulk button.
+  const offPlanStudents = useMemo(() => {
+    const regIndex = new Map<string, Student>();
+    students.forEach(st => regIndex.set(normalizeRegNo(st.regNo), st));
+    const planCache = new Map<string, Set<string> | null>();
+    const planFor = (st: Student) => {
+      const key = `${String(st.programId || '').toLowerCase()}|${String(st.semester || '1st').toLowerCase()}`;
+      if (!planCache.has(key)) {
+        const plan = semesterPlans.find(p =>
+          areProgramsCompatible(p.programId, String(st.programId || '').trim().toLowerCase()) &&
+          String(p.semester || '').trim().toLowerCase() === String(st.semester || '1st').trim().toLowerCase()
+        );
+        planCache.set(key, plan ? new Set(plan.courseCodes.map(c => normalizeCourseCode(c))) : null);
+      }
+      return planCache.get(key)!;
+    };
+    const found = new Set<Student>();
+    studentBindings.forEach(b => {
+      const st = regIndex.get(normalizeRegNo(b.studentRegNo));
+      if (!st || st.departmentId !== activeDeptId) return;
+      const allowed = planFor(st);
+      if (allowed && !allowed.has(normalizeCourseCode(b.courseCode))) found.add(st);
+    });
+    return Array.from(found);
+  }, [students, studentBindings, semesterPlans, activeDeptId]);
+
+  // Remove every off-plan binding for the given students, then push the
+  // corrected rosters to the server (the enroll call replaces the roster).
+  const resetStudentsToPlan = (targets: Student[]) => {
+    const offKeys = new Set<string>();
+    const touchedCodes = new Set<string>();
+    let removeCount = 0;
+    targets.forEach(st => {
+      getOffPlanBindings(st).forEach(b => {
+        offKeys.add(`${normalizeRegNo(b.studentRegNo)}|${normalizeCourseCode(b.courseCode)}`);
+        touchedCodes.add(normalizeCourseCode(b.courseCode));
+      });
+    });
+    const kept = studentBindings.filter(b => {
+      const off = offKeys.has(`${normalizeRegNo(b.studentRegNo)}|${normalizeCourseCode(b.courseCode)}`);
+      if (off) removeCount++;
+      return !off;
+    });
+    setStudentBindings(kept);
+    localStorage.setItem('IQRA_OBE_STUDENT_BINDINGS', JSON.stringify(kept));
+    syncToInstructorCourses(courses, teachers, teacherAssignments, kept, students, touchedCodes);
+    triggerNotification(`Removed ${removeCount} extra course enrollment${removeCount === 1 ? '' : 's'} for ${targets.length} student${targets.length === 1 ? '' : 's'}.`);
+  };
+
+  const confirmResetToPlan = (targets: Student[]) => {
+    const extra = targets.reduce((n, st) => n + getOffPlanBindings(st).length, 0);
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Reset to semester plan',
+      message: `This removes ${extra} enrollment${extra === 1 ? '' : 's'} outside the semester plan for ${targets.length} student${targets.length === 1 ? '' : 's'}, keeping only the courses of their own semester.\n\nMarks entered for those courses are removed with them. Closed courses are not changed.`,
+      confirmText: 'Reset to plan',
+      cancelText: 'Cancel',
+      isDanger: true,
+      onConfirm: async () => resetStudentsToPlan(targets),
+    });
   };
 
   // 6. Retrieve Registered Students & Auto-enroll based on Semester Plan
@@ -3039,13 +3120,25 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
                   <h2 className="text-lg font-bold text-slate-900">Student Enrollments</h2>
                   <p className="text-xs text-slate-500">Auto-enroll registered students into their program's semester plan, or adjust individual students below.</p>
                 </div>
-                <button
-                  onClick={handleAutoEnrollStudents}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-xl text-sm shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  <span>Sync & Auto-Enroll</span>
-                </button>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+                  {offPlanStudents.length > 0 && (
+                    <button
+                      onClick={() => confirmResetToPlan(offPlanStudents)}
+                      className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-semibold py-2.5 px-4 rounded-xl text-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      title="Remove courses outside each student's own semester plan"
+                    >
+                      <AlertCircle className="h-4 w-4" />
+                      <span>Fix {offPlanStudents.length} over-enrolled</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={handleAutoEnrollStudents}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-xl text-sm shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    <span>Sync & Auto-Enroll</span>
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] gap-4 items-start">
@@ -3106,6 +3199,15 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
                             <span className="bg-slate-100 text-slate-600 text-[11px] font-semibold px-2 py-0.5 rounded-md font-mono">{selStudent.regNo}</span>
                             {studyingCount > 5 && (
                               <span className="bg-amber-50 text-amber-700 text-[11px] font-semibold px-2 py-0.5 rounded-full border border-amber-100">Overloaded ({studyingCount} courses)</span>
+                            )}
+                            {getOffPlanBindings(selStudent).length > 0 && (
+                              <button
+                                onClick={() => confirmResetToPlan([selStudent])}
+                                className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full border border-amber-300 text-amber-800 bg-white hover:bg-amber-50 transition-all cursor-pointer"
+                                title="Remove courses outside this student's own semester plan"
+                              >
+                                Reset to semester plan ({getOffPlanBindings(selStudent).length} extra)
+                              </button>
                             )}
                           </div>
                           <p className="text-xs text-slate-500 mt-0.5">{matchedProg?.name || 'Undergraduate student'} • <span className="font-semibold text-indigo-600">{selStudent.semester || '1st'} Semester</span></p>
