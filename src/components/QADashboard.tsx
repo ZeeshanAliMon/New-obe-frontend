@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, Fragment } from 'react';
+import { ChartCard, HBarChart, DonutChart, HeatmapChart, GroupedColumnChart, StackedBarChart, CHART } from './charts/ReportCharts';
 import { Department, Program, GA, OBEData, ProgramObjective, Course } from '../types';
 import { apiService } from '../services/apiService';
 import { 
@@ -4002,6 +4003,27 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                           {moreReportData.studentCount != null && <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{moreReportData.studentCount} Students</span>}
                           <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">Threshold: {moreReportData.attainmentThreshold ?? 50}%</span>
                         </div>
+                        {(() => {
+                          const gaPass = (ga: any) => ga.attainmentStatus ? (ga.attainmentStatus === 'Passed' || ga.attainmentStatus === 'Attained') : (ga.averageAttainment ?? 0) >= 50;
+                          const passed = moreReportData.attributes.filter(gaPass).length;
+                          return (
+                            <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
+                              <ChartCard title="Attainment by Graduate Attribute" subtitle="Average attainment of each GA against the threshold">
+                                <HBarChart
+                                  threshold={moreReportData.attainmentThreshold ?? 50}
+                                  passLabel="Passed" failLabel="Audit Required"
+                                  items={moreReportData.attributes.map((ga: any) => ({ label: String(ga.id), detail: ga.title, value: ga.averageAttainment ?? 0, pass: gaPass(ga) }))}
+                                />
+                              </ChartCard>
+                              <ChartCard title="Status breakdown" subtitle="Number of GAs by status">
+                                <DonutChart centerLabel="GAs" slices={[
+                                  { label: 'Passed', value: passed, color: CHART.good },
+                                  { label: 'Audit Required', value: moreReportData.attributes.length - passed, color: CHART.critical },
+                                ]} />
+                              </ChartCard>
+                            </div>
+                          );
+                        })()}
                         <table className="w-full border-collapse text-xs">
                           <thead>
                             <tr className="bg-slate-50 border-b border-slate-200">
@@ -4041,6 +4063,21 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                     {/* GA by Semester */}
                     {moreReportType === 'ga_semester' && moreReportData.semesters && (
                       <div className="space-y-4">
+                        {(() => {
+                          const sems: any[] = moreReportData.semesters;
+                          const gaIds: string[] = [];
+                          sems.forEach(sem => (sem.attributes || []).forEach((ga: any) => { if (!gaIds.includes(String(ga.id))) gaIds.push(String(ga.id)); }));
+                          const lookup = (gaId: string, semKey: string) => {
+                            const sem = sems.find(x => String(x.semester) === semKey);
+                            const ga = (sem?.attributes || []).find((g: any) => String(g.id) === gaId);
+                            return ga ? (ga.averageAttainment ?? 0) : null;
+                          };
+                          return gaIds.length > 0 && (
+                            <ChartCard title="GA attainment heatmap" subtitle="Darker cells mean higher attainment. Each column is a semester.">
+                              <HeatmapChart rows={gaIds} cols={sems.map(x => String(x.semester))} value={lookup} rowLabel="GA" colLabel={c => `Sem ${c}`} />
+                            </ChartCard>
+                          );
+                        })()}
                         {moreReportData.semesters.map((sem: any, i: number) => (
                           <div key={i} className="border border-slate-200 rounded-2xl overflow-hidden">
                             <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
@@ -4083,6 +4120,27 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                           {moreReportData.classSize != null && <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{moreReportData.classSize} Students</span>}
                           <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">Threshold: {moreReportData.attainmentThreshold ?? 50}%</span>
                         </div>
+                        {(() => {
+                          const clos: any[] = moreReportData.clos;
+                          const passed = clos.filter(c => (c.attainmentPercentage ?? 0) >= 50).length;
+                          return (
+                            <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
+                              <ChartCard title="Attainment by CLO" subtitle="Percentage of students attaining each CLO">
+                                <HBarChart
+                                  threshold={moreReportData.attainmentThreshold ?? 50}
+                                  passLabel="Passed" failLabel="Needs Work"
+                                  items={clos.map(c => ({ label: String(c.code), detail: c.description, value: c.attainmentPercentage ?? 0, pass: (c.attainmentPercentage ?? 0) >= 50, extra: [`Mapped GA: ${c.mappedGA || '—'}`, `Passed: ${c.passedCount ?? '—'} / ${c.totalCount ?? '—'}`] }))}
+                                />
+                              </ChartCard>
+                              <ChartCard title="CLO status" subtitle="Number of CLOs by status">
+                                <DonutChart centerLabel="CLOs" slices={[
+                                  { label: 'Passed', value: passed, color: CHART.good },
+                                  { label: 'Needs Work', value: clos.length - passed, color: CHART.critical },
+                                ]} />
+                              </ChartCard>
+                            </div>
+                          );
+                        })()}
                         <table className="w-full border-collapse text-xs">
                           <thead>
                             <tr className="bg-slate-50 border-b border-slate-200">
@@ -4123,6 +4181,28 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                           <span className="bg-sky-100 text-sky-800 font-bold px-3 py-1 rounded-full">{moreReportData.programId?.toUpperCase()}</span>
                           {moreReportData.semester && <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{moreReportData.semester} Semester</span>}
                         </div>
+                        {(() => {
+                          const courses: any[] = moreReportData.courses;
+                          const allClos = courses.flatMap(c => c.clos || []);
+                          const passed = allClos.filter((c: any) => (c.attainmentPercentage ?? 0) >= 50).length;
+                          const avg = (c: any) => (c.clos || []).length ? (c.clos || []).reduce((a: number, x: any) => a + Number(x.attainmentPercentage ?? 0), 0) / (c.clos || []).length : null;
+                          return (
+                            <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
+                              <ChartCard title="Average CLO attainment by course" subtitle="Mean of each course's CLO attainment">
+                                <HBarChart
+                                  passLabel="At / above 50%" failLabel="Below 50%"
+                                  items={courses.map(c => { const v = avg(c); return { label: String(c.courseCode), detail: c.courseTitle, value: v, pass: v != null && v >= 50, extra: [`${(c.clos || []).length} CLOs`] }; })}
+                                />
+                              </ChartCard>
+                              <ChartCard title="CLO status across courses" subtitle="All CLOs in this report">
+                                <DonutChart centerLabel="CLOs" slices={[
+                                  { label: 'Passed', value: passed, color: CHART.good },
+                                  { label: 'Audit Required', value: allClos.length - passed, color: CHART.critical },
+                                ]} />
+                              </ChartCard>
+                            </div>
+                          );
+                        })()}
                         {moreReportData.courses.map((course: any, i: number) => (
                           <div key={i} className="border border-slate-200 rounded-2xl overflow-hidden">
                             <div className="bg-slate-50 px-4 py-2 flex items-center gap-3 border-b border-slate-200">
@@ -4167,6 +4247,30 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                           <span className="bg-teal-100 text-teal-800 font-bold px-3 py-1 rounded-full">{moreReportData.programName}</span>
                           <span className="text-[10px] text-slate-400">HEC Program Outcome Compliance Report</span>
                         </div>
+                        {(() => {
+                          const pos: any[] = moreReportData.pos;
+                          const colorOf = (st: string) => st === 'Met' ? CHART.good : st === 'Partially Met' ? CHART.warning : CHART.critical;
+                          const count = (st: string) => pos.filter(p => p.status === st).length;
+                          const other = pos.length - count('Met') - count('Partially Met');
+                          return (
+                            <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
+                              <ChartCard title="Attainment by Program Outcome" subtitle="Bar colour shows HEC compliance status">
+                                <HBarChart
+                                  showThreshold={false}
+                                  legend={[{ color: CHART.good, label: 'Met' }, { color: CHART.warning, label: 'Partially Met' }, { color: CHART.critical, label: 'Not Met' }]}
+                                  items={pos.map(p => ({ label: String(p.id), detail: p.text, value: p.attainmentPercent ?? 0, color: colorOf(p.status), status: p.status, extra: (p.contributingGAs || []).length ? [`GAs: ${(p.contributingGAs || []).map((g: any) => g.gaId).join(', ')}`] : [] }))}
+                                />
+                              </ChartCard>
+                              <ChartCard title="Compliance status" subtitle="Number of POs by status">
+                                <DonutChart centerLabel="POs" slices={[
+                                  { label: 'Met', value: count('Met'), color: CHART.good },
+                                  { label: 'Partially Met', value: count('Partially Met'), color: CHART.warning },
+                                  { label: 'Not Met', value: other, color: CHART.critical },
+                                ]} />
+                              </ChartCard>
+                            </div>
+                          );
+                        })()}
                         <table className="w-full border-collapse text-xs">
                           <thead>
                             <tr className="bg-slate-50 border-b border-slate-200">
@@ -4211,6 +4315,29 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                           <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">{moreReportData.atRiskCount ?? moreReportData.students.length} At-Risk Students</span>
                           <span className="text-[10px] text-slate-400">Students failing 2+ CLOs below {moreReportData.threshold ?? 50}%</span>
                         </div>
+                        {moreReportData.students.length > 0 && (() => {
+                          const students: any[] = moreReportData.students;
+                          const perCourse: Record<string, number> = {};
+                          students.forEach(st => Array.from(new Set((st.failedCLOs || []).map((f: any) => String(f.courseCode)))).forEach((code: any) => { perCourse[code] = (perCourse[code] || 0) + 1; }));
+                          const courseRows = Object.entries(perCourse).sort((a, b) => b[1] - a[1]);
+                          const buckets = [2, 3, 4, 5].map(n => ({
+                            label: n === 5 ? '5+ CLOs' : `${n} CLOs`,
+                            value: students.filter(st => { const k = (st.failedCLOs || []).length; return n === 5 ? k >= 5 : k === n; }).length,
+                          }));
+                          const fewer = students.filter(st => (st.failedCLOs || []).length < 2).length;
+                          return (
+                            <div className="grid gap-3 lg:grid-cols-2">
+                              <ChartCard title="At-risk students per course" subtitle="Students with at least one failed CLO in the course">
+                                <HBarChart colorByStatus={false} showThreshold={false} unit="students" max={0}
+                                  items={courseRows.map(([code, n]) => ({ label: code, value: n }))} />
+                              </ChartCard>
+                              <ChartCard title="How many CLOs each student is failing" subtitle="Number of students by failed-CLO count">
+                                <HBarChart colorByStatus={false} showThreshold={false} unit="students" max={0}
+                                  items={[...(fewer ? [{ label: '1 CLO', value: fewer }] : []), ...buckets]} />
+                              </ChartCard>
+                            </div>
+                          );
+                        })()}
                         <table className="w-full border-collapse text-xs">
                           <thead>
                             <tr className="bg-slate-50 border-b border-slate-200">
@@ -4242,6 +4369,28 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                     {moreReportType === 'gap_analysis' && moreReportData.attributes && (
                       <div className="space-y-3">
                         <p className="text-xs text-slate-500">GAs with zero or low course coverage — indicates curriculum gaps requiring attention.</p>
+                        {(() => {
+                          const atts: any[] = moreReportData.attributes;
+                          const kind = (st: string) => st === 'No Coverage' ? 'none' : (st === 'Partial Coverage' || st === 'Mapped but No CLOs' || st === 'Low Attainment') ? 'partial' : 'ok';
+                          const colorOf = (st: string) => ({ none: CHART.critical, partial: CHART.warning, ok: CHART.good } as any)[kind(st)];
+                          return (
+                            <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
+                              <ChartCard title="Course coverage by GA" subtitle="Number of mapped courses per GA. Bar colour shows coverage status.">
+                                <HBarChart showThreshold={false} unit="courses" max={0}
+                                  legend={[{ color: CHART.good, label: 'Covered' }, { color: CHART.warning, label: 'Partial / Low' }, { color: CHART.critical, label: 'No Coverage' }]}
+                                  items={atts.map(g => ({ label: String(g.gaId), detail: g.gaName, value: g.mappedCoursesCount ?? 0, color: colorOf(g.status), status: g.status, extra: [`Active CLOs: ${g.activeCLOsCount ?? 0}`, `Avg attainment: ${g.avgAttainment != null ? Number(g.avgAttainment).toFixed(1) + '%' : '—'}`] }))}
+                                />
+                              </ChartCard>
+                              <ChartCard title="Coverage status" subtitle="Number of GAs by status">
+                                <DonutChart centerLabel="GAs" slices={[
+                                  { label: 'Covered', value: atts.filter(g => kind(g.status) === 'ok').length, color: CHART.good },
+                                  { label: 'Partial / Low', value: atts.filter(g => kind(g.status) === 'partial').length, color: CHART.warning },
+                                  { label: 'No Coverage', value: atts.filter(g => kind(g.status) === 'none').length, color: CHART.critical },
+                                ]} />
+                              </ChartCard>
+                            </div>
+                          );
+                        })()}
                         <table className="w-full border-collapse text-xs">
                           <thead>
                             <tr className="bg-slate-50 border-b border-slate-200">
@@ -4280,6 +4429,27 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                     {moreReportType === 'instructor_performance' && moreReportData.instructors && (
                       <div className="space-y-3">
                         <p className="text-xs text-slate-500">Instructors with courses below the {moreReportData.threshold ?? 50}% attainment threshold.</p>
+                        {moreReportData.instructors.length > 0 && (() => {
+                          const insts: any[] = moreReportData.instructors;
+                          const allCourses = insts.flatMap(i => i.courses || []);
+                          const below = allCourses.filter((c: any) => c.belowThreshold).length;
+                          return (
+                            <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
+                              <ChartCard title="Courses per instructor" subtitle="On-track vs below-target courses">
+                                <StackedBarChart
+                                  parts={[{ label: 'On Track', color: CHART.good }, { label: 'Below Target', color: CHART.critical }]}
+                                  rows={insts.map(i => ({ label: String(i.name || i.employeeId || '—'), values: [(i.courses || []).filter((c: any) => !c.belowThreshold).length, (i.courses || []).filter((c: any) => c.belowThreshold).length] }))}
+                                />
+                              </ChartCard>
+                              <ChartCard title="All courses" subtitle="Courses by status">
+                                <DonutChart centerLabel="courses" slices={[
+                                  { label: 'On Track', value: allCourses.length - below, color: CHART.good },
+                                  { label: 'Below Target', value: below, color: CHART.critical },
+                                ]} />
+                              </ChartCard>
+                            </div>
+                          );
+                        })()}
                         {moreReportData.instructors.map((inst: any, i: number) => (
                           <div key={i} className="border border-slate-200 rounded-2xl overflow-hidden">
                             <div className="bg-slate-50 px-4 py-2 flex items-center gap-3 border-b border-slate-200">
@@ -4323,6 +4493,17 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                     {moreReportType === 'cohort_comparison' && moreReportData.cohorts && (
                       <div className="space-y-3">
                         <p className="text-xs text-slate-500">GA attainment across academic years / batches ({moreReportData.gaId || 'All GAs'}).</p>
+                        {moreReportData.cohorts.length > 0 && (() => {
+                          const cohorts: any[] = moreReportData.cohorts;
+                          const gas: string[] = Array.from(new Set(cohorts.map(c => String(c.gaId))));
+                          const years: string[] = Array.from(new Set(cohorts.map(c => String(c.academicYear)))).sort();
+                          const val = (ga: string, yr: string) => { const c = cohorts.find(x => String(x.gaId) === ga && String(x.academicYear) === yr); return c ? Number(c.attainmentPercent ?? 0) : null; };
+                          return (
+                            <ChartCard title="GA attainment by academic year" subtitle={years.length > 1 ? 'Each colour is an academic year; darker = more recent' : `Academic year ${years[0]}`}>
+                              <GroupedColumnChart categories={gas} series={years} value={val} threshold={moreReportData.threshold ?? undefined} />
+                            </ChartCard>
+                          );
+                        })()}
                         <table className="w-full border-collapse text-xs">
                           <thead>
                             <tr className="bg-slate-50 border-b border-slate-200">
