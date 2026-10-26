@@ -1050,43 +1050,9 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
             console.warn("Failed to fetch student courses from backend:", e);
           }
 
-          // Check backend course assignments for this student's enrollment
-          try {
-            const assignments = await apiService.getCourseAssignments();
-            if (Array.isArray(assignments)) {
-              assignments.forEach((a: any) => {
-                const stdList = a.students || a.enrolled_students || a.enrolledStudents || a.student_list || [];
-                const isStudentInAssignment = Array.isArray(stdList) && stdList.some((s: any) => 
-                  areStudentsEqual(s.regNo || s.reg_no, regToUse) || 
-                  (s.name && matchingStudent && areStudentsEqual(s.name, matchingStudent.name)) ||
-                  (s.name && String(s.name).trim().toLowerCase() === String(regToUse).trim().toLowerCase())
-                );
-                if (isStudentInAssignment) {
-                  const cCode = a.courseCode || a.course_code || a.code;
-                  if (cCode) {
-                    const already = studentCourses.some(sc => sc.code?.toUpperCase() === cCode?.toUpperCase());
-                    if (!already) {
-                      const globalC = (obData.courses || []).find((c: any) => c.code?.toUpperCase() === cCode?.toUpperCase());
-                      studentCourses.push({
-                        id: a.id || `course-assigned-${cCode}`,
-                        code: cCode,
-                        title: globalC?.title || a.courseTitle || cCode,
-                        creditHours: globalC?.creditHours || 3,
-                        categories: [],
-                        unitsData: {},
-                        obeQuestions: [],
-                        studentMarks: {},
-                        obeMarks: {},
-                        clos: globalC?.mappedGAs || []
-                      });
-                    }
-                  }
-                }
-              });
-            }
-          } catch (e) {
-            console.warn("Could not check course assignments for student:", e);
-          }
+          // (Course-assignment lookup removed: /admin/course-assignments/ is Dept-Admin only and
+          //  always returned 403 for students. Enrolled courses come from getStudentCourses() above
+          //  and the instructor-course rosters below.)
 
           // Merge any course from allInstructorCourses where the student is enrolled
           allInstructorCourses.forEach((ic: any) => {

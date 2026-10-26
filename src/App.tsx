@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { UserType } from './types';
 import Login from './components/Login';
-import QADashboard from './components/QADashboard';
-import InstructorDashboard from './components/InstructorDashboard';
-import AdmissionDashboard from './components/AdmissionDashboard';
-import DeptAdminDashboard from './components/DeptAdminDashboard';
-import StudentDashboard from './components/StudentDashboard';
+// Each dashboard is loaded only when that role logs in (keeps the first download small).
+const QADashboard = lazy(() => import('./components/QADashboard'));
+const InstructorDashboard = lazy(() => import('./components/InstructorDashboard'));
+const AdmissionDashboard = lazy(() => import('./components/AdmissionDashboard'));
+const DeptAdminDashboard = lazy(() => import('./components/DeptAdminDashboard'));
+const StudentDashboard = lazy(() => import('./components/StudentDashboard'));
 import ComingSoon from './components/ComingSoon';
 import Toast from './components/Toast';
 import { AnimatePresence, motion } from 'motion/react';
@@ -90,6 +91,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen font-sans text-gray-900 bg-white selection:bg-gray-900 selection:text-white">
+      <Suspense fallback={<div className="flex h-screen w-full items-center justify-center text-sm text-slate-500">Loading…</div>}>
       <AnimatePresence mode="wait">
         {!currentUser ? (
           <motion.div
@@ -163,6 +165,7 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+      </Suspense>
 
       <AnimatePresence>
         {toastMsg && (

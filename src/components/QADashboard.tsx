@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ChartCard, HBarChart, DonutChart, HeatmapChart, GroupedColumnChart, StackedBarChart, CHART } from './charts/ReportCharts';
 import { Department, Program, GA, OBEData, ProgramObjective, Course } from '../types';
 import { apiService } from '../services/apiService';
@@ -11,8 +11,7 @@ import {
   Loader2, 
   Search, 
   ChevronLeft, 
-  ChevronRight, 
-  ChevronDown, 
+  ChevronRight,  
   ArrowLeft, 
   GraduationCap, 
   BookOpen, 
@@ -23,7 +22,6 @@ import {
   HelpCircle,
   FileText,
   Layout,
-  Activity,
   Info,
   Download,
   Printer,
@@ -33,8 +31,6 @@ import {
   Trash2,
   X,
   Building,
-  Cpu,
-  Server,
   PieChart,
   Users,
   Target,
@@ -49,33 +45,7 @@ interface QADashboardProps {
   onLogout: () => void;
 }
 
-type ActiveViewModule = 'allocation' | 'po_mapping' | 'vision_mission' | 'po_configure' | 'attainment_reports' | 'semester_reports' | 'more_reports';
-
-const areRegNosEqual = (reg1: string | null | undefined, reg2: string | null | undefined): boolean => {
-  if (!reg1 || !reg2) return false;
-  const r1 = String(reg1).trim().toLowerCase();
-  const r2 = String(reg2).trim().toLowerCase();
-  if (r1 === r2) return true;
-
-  const norm1 = r1.replace(/[^a-z0-9]/g, '');
-  const norm2 = r2.replace(/[^a-z0-9]/g, '');
-  if (norm1 === norm2) return true;
-
-  // Handle cases where one registration number might miss a prefix or department code (e.g., 052-SP23-22144 vs SP23-22144)
-  // We only match if one normalized registration number is a suffix of the other.
-  if (norm1.endsWith(norm2) || norm2.endsWith(norm1)) {
-    const minLen = Math.min(norm1.length, norm2.length);
-    if (minLen >= 4) return true;
-  }
-
-  return false;
-};
-
-const getStudentMarks = (obeMarks: any, regNo: string) => {
-  if (!obeMarks) return undefined;
-  const matchedKey = Object.keys(obeMarks).find(k => areRegNosEqual(k, regNo));
-  return matchedKey ? obeMarks[matchedKey] : undefined;
-};
+type ActiveViewModule = 'allocation' | 'po_mapping' | 'vision_mission' | 'po_configure' | 'more_reports';
 
 function naturalCompare(s1: string, s2: string): number {
   const aParts = s1.split(/(\d+)/);
@@ -96,110 +66,14 @@ function naturalCompare(s1: string, s2: string): number {
   return aParts.length - bParts.length;
 }
 
-function getGAColor(gaId: string): string {
-  const num = parseInt(gaId.replace(/\D/g, ''), 10) || 1;
-  const colors = [
-    'bg-blue-500 border-blue-600 text-blue-100',
-    'bg-blue-500 border-blue-600 text-blue-100',
-    'bg-indigo-500 border-indigo-600 text-indigo-100',
-    'bg-violet-500 border-violet-600 text-violet-100',
-    'bg-teal-500 border-teal-600 text-teal-100',
-    'bg-orange-500 border-orange-600 text-orange-100',
-    'bg-amber-500 border-amber-600 text-amber-100',
-    'bg-pink-500 border-pink-600 text-pink-100',
-    'bg-sky-500 border-sky-600 text-sky-100',
-    'bg-cyan-500 border-cyan-600 text-cyan-100',
-    'bg-rose-500 border-rose-600 text-rose-100',
-  ];
-  return colors[(num - 1) % colors.length];
-}
-
-function getGATextColors(gaId: string): { text: string; bg: string; border: string } {
-  const num = parseInt(gaId.replace(/\D/g, ''), 10) || 1;
-  const textColors = [
-    { text: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-150/60' },
-    { text: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-150/60' },
-    { text: 'text-indigo-700', bg: 'bg-indigo-50', border: 'border-indigo-150/60' },
-    { text: 'text-violet-700', bg: 'bg-violet-50', border: 'border-violet-150/60' },
-    { text: 'text-teal-700', bg: 'bg-teal-50', border: 'border-teal-150/60' },
-    { text: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-150/60' },
-    { text: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-150/60' },
-    { text: 'text-pink-700', bg: 'bg-pink-50', border: 'border-pink-150/60' },
-    { text: 'text-sky-700', bg: 'bg-sky-50', border: 'border-sky-150/60' },
-    { text: 'text-cyan-700', bg: 'bg-cyan-50', border: 'border-cyan-150/60' },
-    { text: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-150/60' },
-  ];
-  return textColors[(num - 1) % textColors.length];
-}
-
 export default function QADashboard({ onLogout }: QADashboardProps) {
   const [data, setData] = useState<OBEData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // GA Attainment Report States
-  const [selectedReportProgramId, setSelectedReportProgramId] = useState<string>('all');
-  const [selectedReportBatch, setSelectedReportBatch] = useState<string>('');
-  const [selectedReportCourseCode, setSelectedReportCourseCode] = useState<string>('all');
   const [students, setStudents] = useState<any[]>([]);
-  const [instructorCourses, setInstructorCourses] = useState<any[]>([]);
-  const [loadingReports, setLoadingReports] = useState<boolean>(false);
 
-  // Server-Side Batch GA Attainment Report States
-  const [selectedDataSource, setSelectedDataSource] = useState<'client' | 'server'>('server');
-  const [serverBatchReportData, setServerBatchReportData] = useState<any | null>(null);
-  const [loadingServerBatchReport, setLoadingServerBatchReport] = useState<boolean>(false);
-  const [serverBatchReportError, setServerBatchReportError] = useState<string | null>(null);
-  const [isServerBatchReportFallback, setIsServerBatchReportFallback] = useState<boolean>(false);
-
-  // Semester GA Reports States
-  const [semesterReportData, setSemesterReportData] = useState<any | null>(null);
-  const [loadingSemesterReport, setLoadingSemesterReport] = useState<boolean>(false);
-  const [semesterReportError, setSemesterReportError] = useState<string | null>(null);
-  const [selectedSemesterGaFocus, setSelectedSemesterGaFocus] = useState<string>('all');
-
-  const uniqueGAs = useMemo(() => {
-    if (!semesterReportData?.semesters) return [];
-    const gasMap = new Map<string, string>();
-    semesterReportData.semesters.forEach((sem: any) => {
-      sem.attributes?.forEach((attr: any) => {
-        gasMap.set(attr.id, attr.title);
-      });
-    });
-    return Array.from(gasMap.entries())
-      .map(([id, title]) => ({ id, title }))
-      .sort((a, b) => a.id.localeCompare(b.id));
-  }, [semesterReportData]);
-
-  const combinedGAData = useMemo(() => {
-    if (!semesterReportData?.semesters) return [];
-    const uniqueGAsList = uniqueGAs;
-    
-    return uniqueGAsList.map(ga => {
-      let totalAttainment = 0;
-      let semesterCount = 0;
-      let totalCourses = 0;
-      
-      semesterReportData.semesters.forEach((sem: any) => {
-        const found = sem.attributes?.find((attr: any) => attr.id === ga.id);
-        if (found) {
-          totalAttainment += found.averageAttainment;
-          semesterCount++;
-          totalCourses += found.contributingCoursesCount || sem.courseCodes?.length || 0;
-        }
-      });
-      
-      const averageAttainment = semesterCount > 0 ? Math.round(totalAttainment / semesterCount) : 0;
-      
-      return {
-        id: ga.id,
-        title: ga.title,
-        averageAttainment,
-        contributingCoursesCount: totalCourses,
-        semestersCount: semesterCount,
-      };
-    });
-  }, [uniqueGAs, semesterReportData]);
 
   // Core navigation selectors directly in header
   const [activeDeptId, setActiveDeptId] = useState<string>(() => {
@@ -227,6 +101,15 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
   const [moreReportProgramId, setMoreReportProgramId] = useState<string>('');
   const [moreReportBatch, setMoreReportBatch] = useState<string>('');
   const [moreReportSemester, setMoreReportSemester] = useState<string>('');
+  // Pass mark for the Reports page: use the threshold the report itself returns
+  // (attainmentThreshold / threshold), falling back to the backend default of 50%.
+  const reportThreshold = (d: any): number => {
+    const t = Number(d?.attainmentThreshold ?? d?.threshold);
+    return Number.isFinite(t) && t > 0 ? t : 50;
+  };
+  // CLO attainment %: course-attainment sends `attainmentPercentage`,
+  // co-attainment-summary sends `attainmentPercent`.
+  const cloPct = (c: any): number => Number(c?.attainmentPercentage ?? c?.attainmentPercent ?? 0);
   const [moreReportCourseCode, setMoreReportCourseCode] = useState<string>('');
   const [moreReportGaId, setMoreReportGaId] = useState<string>('');
   const [moreReportData, setMoreReportData] = useState<any>(null);
@@ -235,10 +118,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
 
   // Dropdown states for Desktop-Style Menu Bar
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const [selectedReportType, setSelectedReportType] = useState<'clo' | 'plo'>('plo');
   const [openReportSub, setOpenReportSub] = useState<'clo' | 'plo' | null>(null);
-  const [cloCourseSearch, setCloCourseSearch] = useState('');
-  const [expandedReportCourse, setExpandedReportCourse] = useState<string | null>(null);
   const [activeModal, setActiveModal] = useState<'about' | 'clos' | 'plos' | 'statistics' | 'integrity' | 'help' | 'add_program' | 'edit_program_vm' | 'add_course' | 'edit_course' | null>(null);
   const [viewVmModal, setViewVmModal] = useState<{ type: 'department' | 'program'; id: string; name: string; code?: string; vision: string; mission: string } | null>(null);
   const [isEditingVm, setIsEditingVm] = useState(false);
@@ -394,523 +274,24 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
     setIsEditingVmInline(false);
   }, [activeDeptId, activeProgramId, selectedCourseId, searchPhrase, activeModule]);
 
-  // Extract batch code from student registration number
-  const getStudentBatchCode = (regNo: string): string => {
-    const match = regNo.trim().match(/(FA|SP)(\d{2})/i);
-    if (match) {
-      return match[0].toLowerCase();
-    }
-    const yearMatch = regNo.trim().match(/(20\d{2})/);
-    if (yearMatch) {
-      return `fa${yearMatch[1].slice(-2)}`;
-    }
-    return 'fa22';
+  // Batch code for the "GA Attainment by Batch" picker. Matches the backend's
+  // batch lookup (reg_no starts with the code, or contains "-<code>-"):
+  //   "SP23-BSCS-014" -> SP23, "052-FA23-22040" -> FA23, "BSCS-2024-003" -> 2024
+  const getRegNoBatch = (regNo: string): string | null => {
+    const parts = String(regNo || '').trim().toUpperCase().split('-');
+    const term = parts.find(p => /^(FA|SP|SU)\d{2}$/.test(p));
+    if (term) return term;
+    const year = parts.find(p => /^20\d{2}$/.test(p));
+    return year || null;
   };
 
-  // Lazy loading of GA Attainment Report data
+  // Students for the batch picker (loaded once, when that report is opened)
   useEffect(() => {
-    if (activeModule !== 'attainment_reports') return;
-
-    const loadReportData = async () => {
-      setLoadingReports(true);
-      try {
-        const allStudents = await apiService.getStudents().catch(() => []);
-        setStudents(allStudents);
-
-        const instCourses = await apiService.getInstructorCourses().catch(() => apiService.getLocalInstructorCourses());
-        setInstructorCourses(instCourses);
-
-        if (allStudents.length > 0) {
-          const extractedBatches = Array.from(new Set(allStudents.map(s => getStudentBatchCode(s.regNo))));
-          // Ensure fa22 is default if available
-          if (extractedBatches.length > 0) {
-            const hasFa22 = extractedBatches.includes('fa22');
-            setSelectedReportBatch(hasFa22 ? 'fa22' : extractedBatches[0]);
-          }
-        }
-      } catch (err) {
-        console.warn("Failed to load report data:", err);
-      } finally {
-        setLoadingReports(false);
-      }
-    };
-
-    loadReportData();
-  }, [activeModule]);
-
-  // Lazy loading of Semester GA Reports
-  useEffect(() => {
-    if (activeModule !== 'semester_reports' || !activeProgramId) return;
-
-    const loadSemesterReport = async () => {
-      setLoadingSemesterReport(true);
-      setSemesterReportError(null);
-      try {
-        const result = await apiService.getProgramGAAttainmentBySemester(activeProgramId);
-        setSemesterReportData(result);
-      } catch (err: any) {
-        console.error("Failed to load semester-wise GA reports:", err);
-        setSemesterReportError(err?.message || "Failed to load semester-wise GA reports.");
-      } finally {
-        setLoadingSemesterReport(false);
-      }
-    };
-
-    loadSemesterReport();
-  }, [activeModule, activeProgramId]);
-
-  // Lazy loading of Server-Side Batch GA Report
-  useEffect(() => {
-    if (activeModule !== 'attainment_reports' || selectedReportType !== 'plo' || selectedDataSource !== 'server' || !selectedReportBatch) return;
-
-    const loadServerBatchReport = async () => {
-      setLoadingServerBatchReport(true);
-      setServerBatchReportError(null);
-      try {
-        const programId = selectedReportProgramId === 'all' ? undefined : selectedReportProgramId;
-        const result = await apiService.getProgramGAAttainmentBatch(
-          selectedReportBatch,
-          activeDeptId,
-          programId
-        );
-        setServerBatchReportData(result);
-        setIsServerBatchReportFallback(false);
-      } catch (err: any) {
-        console.error("Failed to load server-side batch GA report:", err);
-        setIsServerBatchReportFallback(true);
-        setServerBatchReportError(null);
-      } finally {
-        setLoadingServerBatchReport(false);
-      }
-    };
-
-    loadServerBatchReport();
-  }, [activeModule, selectedReportType, selectedDataSource, selectedReportBatch, selectedReportProgramId, activeDeptId]);
-
-  // Helper to calculate student's GA score dynamically using mock/real structures
-  const calculateStudentGAScore = (
-    student: any,
-    gaId: string,
-    allCourses: Course[],
-    instCourses: any[]
-  ): number | null => {
-    // Find courses that map to this GA
-    const contributingCourses = allCourses.filter(c => c.mappedGAs && c.mappedGAs.includes(gaId));
-    
-    if (contributingCourses.length === 0) {
-      return null; // No mapped courses for this GA
-    }
-
-    let totalAggregate = 0;
-    let coursesWithMarksCount = 0;
-
-    contributingCourses.forEach(c => {
-      const instCourse = instCourses.find(ic => ic.code === c.code);
-      let aggregate = 0;
-      let hasAnyMarks = false;
-
-      if (instCourse) {
-        const std = instCourse.students?.find((s: any) => s.regNo === student.regNo);
-        if (std && std.marks) {
-          let catSumTotal = 0;
-          let gradedCategoriesWeight = 0;
-          
-          instCourse.categories?.forEach((cat: any) => {
-            if (cat.percentage > 0) {
-              const existingUnits = instCourse.unitsData?.[cat.name] || [];
-              let hasCatMarks = false;
-              let catContribution = 0;
-              
-              for (let u = 1; u <= cat.units; u++) {
-                const matchingUnit = existingUnits.find((unit: any) => unit.unitNo === u);
-                const unitWeightage = matchingUnit?.weightage ?? (100 / cat.units);
-                const totalMarks = matchingUnit ? matchingUnit.totalMarks : 10;
-                const questions = matchingUnit?.questions || [];
-                
-                let unitObtained = 0;
-                let hasUnitMarks = false;
-                if (questions.length > 0) {
-                  questions.forEach((q: any) => {
-                    const qKey = `q-${cat.name}-${u}-${q.id}`;
-                    if (std.marks?.[qKey] !== undefined) {
-                      unitObtained += std.marks[qKey];
-                      hasUnitMarks = true;
-                      hasAnyMarks = true;
-                    }
-                  });
-                } else {
-                  const dKey = `${cat.name}-${u}`;
-                  if (std.marks?.[dKey] !== undefined) {
-                    unitObtained += std.marks[dKey];
-                    hasUnitMarks = true;
-                    hasAnyMarks = true;
-                  } else if (std.marks?.[cat.name] !== undefined && u === 1) {
-                    unitObtained += std.marks[cat.name];
-                    hasUnitMarks = true;
-                    hasAnyMarks = true;
-                  }
-                }
-
-                if (hasUnitMarks && totalMarks > 0) {
-                  catContribution += (unitObtained / totalMarks) * (unitWeightage / 100) * cat.percentage;
-                  hasCatMarks = true;
-                }
-              }
-
-              if (hasCatMarks) {
-                catSumTotal += catContribution;
-                gradedCategoriesWeight += cat.percentage;
-              }
-            }
-          });
-          
-          if (hasAnyMarks) {
-            aggregate = gradedCategoriesWeight > 0 ? (catSumTotal / gradedCategoriesWeight) * 100 : catSumTotal;
-          }
-        }
-      }
-
-      if (hasAnyMarks) {
-        totalAggregate += aggregate;
-        coursesWithMarksCount++;
-      }
-    });
-    
-    // Divide by course count to calculate correct average percentage score across courses
-    return coursesWithMarksCount > 0 ? Math.round((totalAggregate / coursesWithMarksCount) * 10) / 10 : null;
-  };
-
-  // Sync selectedReportProgramId with activeProgramId
-  useEffect(() => {
-    if (activeProgramId && activeProgramId !== '') {
-      setSelectedReportProgramId(activeProgramId);
-    } else {
-      setSelectedReportProgramId('all');
-    }
-  }, [activeProgramId]);
-
-  // Helper to calculate a student's overall course total percentage
-  const calculateStudentCourseTotalPercent = (student: any, instCourse: any): number => {
-    if (!student || !instCourse) return 0;
-    
-    let catSumTotal = 0;
-    let hasAnyMarks = false;
-
-    instCourse.categories?.forEach((cat: any) => {
-      if (cat.percentage > 0) {
-        const existingUnits = instCourse.unitsData?.[cat.name] || [];
-        
-        for (let u = 1; u <= cat.units; u++) {
-          const matchingUnit = existingUnits.find((unit: any) => unit.unitNo === u);
-          const unitWeightage = matchingUnit?.weightage ?? (100 / cat.units);
-          const totalMarks = matchingUnit ? matchingUnit.totalMarks : 10;
-          const questions = matchingUnit?.questions || [];
-          
-          let unitObtained = 0;
-          if (questions.length > 0) {
-            questions.forEach((q: any) => {
-              const qKey = `q-${cat.name}-${u}-${q.id}`;
-              if (student.marks?.[qKey] !== undefined) {
-                unitObtained += student.marks[qKey];
-                hasAnyMarks = true;
-              }
-            });
-          } else {
-            const stdMarks = student.student_marks || student.marks || {};
-            const dKey = `${cat.name}-${u}`;
-            if (stdMarks[dKey] !== undefined) {
-              unitObtained += stdMarks[dKey];
-              hasAnyMarks = true;
-            } else if (stdMarks[cat.name] !== undefined && u === 1) {
-              unitObtained += stdMarks[cat.name];
-              hasAnyMarks = true;
-            }
-          }
-
-          if (totalMarks > 0) {
-            catSumTotal += (unitObtained / totalMarks) * (unitWeightage / 100) * cat.percentage;
-          }
-        }
-      }
-    });
-
-    return hasAnyMarks ? Math.round(catSumTotal) : 0;
-  };
-
-  // Helper to retrieve CLO attainment percentages for all CLOs in a course
-  const getCourseCLOAttainment = (courseCode: string) => {
-    const instCourse = instructorCourses.find(ic => ic.code === courseCode);
-    if (!instCourse) {
-      const hash = courseCode.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      return [
-        { code: 'CLO-1', percentage: 70 + (hash % 15), status: 'Attained', totalStudents: reportMetrics.filteredStudents?.length || 24 },
-        { code: 'CLO-2', percentage: 65 + (hash % 20), status: 'Attained', totalStudents: reportMetrics.filteredStudents?.length || 24 },
-        { code: 'CLO-3', percentage: 55 + (hash % 25), status: 'Attained', totalStudents: reportMetrics.filteredStudents?.length || 24 },
-        { code: 'CLO-4', percentage: 45 + (hash % 30), status: (45 + (hash % 30)) >= 50 ? 'Attained' : 'Not Attained', totalStudents: reportMetrics.filteredStudents?.length || 24 }
-      ];
-    }
-
-    const batchStudents = instCourse.students?.filter((s: any) => 
-      getStudentBatchCode(s.regNo) === selectedReportBatch
-    ) || [];
-
-    const cloCount = instCourse.cloCount || 4;
-    const qs = instCourse.obeQuestions || [];
-    const marks = instCourse.obe_marks || instCourse.obeMarks || {};
-
-    return Array.from({ length: cloCount }, (_, i) => `CLO-${i + 1}`).map(clo => {
-      const cloQs = qs.filter((q: any) => q.mappedCLOs?.includes(clo));
-      const maxMarks = cloQs.reduce((acc: number, q: any) => acc + q.maxMarks, 0);
-
-      let assessedCount = 0;
-      let passedCount = 0;
-
-      if (batchStudents.length > 0) {
-        batchStudents.forEach((student: any) => {
-          if (maxMarks > 0) {
-            const score = cloQs.reduce((acc: number, q: any) => acc + (getStudentMarks(marks, student.regNo)?.[q.id] ?? 0), 0);
-            const pct = (score / maxMarks) * 100;
-            assessedCount++;
-            if (pct >= 50) passedCount++;
-          } else {
-            const pct = calculateStudentCourseTotalPercent(student, instCourse);
-            if (pct > 0) {
-              assessedCount++;
-              if (pct >= 50) passedCount++;
-            }
-          }
-        });
-      }
-
-      if (assessedCount === 0 && instCourse.students?.length > 0) {
-        instCourse.students.forEach((student: any) => {
-          if (maxMarks > 0) {
-            const score = cloQs.reduce((acc: number, q: any) => acc + (getStudentMarks(marks, student.regNo)?.[q.id] ?? 0), 0);
-            const pct = (score / maxMarks) * 100;
-            assessedCount++;
-            if (pct >= 50) passedCount++;
-          } else {
-            const pct = calculateStudentCourseTotalPercent(student, instCourse);
-            if (pct > 0) {
-              assessedCount++;
-              if (pct >= 50) passedCount++;
-            }
-          }
-        });
-      }
-
-      const totalCount = assessedCount;
-      const percentage = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
-
-      return {
-        code: clo,
-        percentage: totalCount > 0 ? percentage : null,
-        status: totalCount > 0 ? (percentage >= 50 ? 'Attained' : 'Not Attained') : 'Not Assessed',
-        totalStudents: totalCount
-      };
-    });
-  };
-
-  // Compile report metrics based on current filters
-  const clientReportMetrics = useMemo(() => {
-    if (!data) return { gaMetrics: [], overallPassRate: 0, topGA: 'N/A', bottomGA: 'N/A', filteredStudents: [] };
-
-    // 1. Get filtered students by batch and program
-    const filteredStudents = students.filter(s => {
-      const matchBatch = getStudentBatchCode(s.regNo) === (selectedReportBatch || 'fa22');
-      const matchProg = selectedReportProgramId === 'all' ? true : s.programId === selectedReportProgramId;
-      // Also ensure they are in the active department
-      const matchDept = s.departmentId === activeDeptId;
-      return matchBatch && matchProg && matchDept;
-    });
-
-    // 2. Define GAs that are active for the current selection
-    // If specific program, get program GAs, else get all department GAs
-    let activeGAs = data.gas.filter(ga => ga.departmentId === activeDeptId);
-    if (selectedReportProgramId !== 'all') {
-      const progObj = data.programs.find(p => p.id === selectedReportProgramId);
-      if (progObj) {
-        // Find GAs mapped to this program or generic ones
-        activeGAs = data.gas.filter(ga => ga.programId === selectedReportProgramId || (!ga.programId && ga.departmentId === activeDeptId));
-      }
-    }
-    activeGAs = [...activeGAs].sort((a, b) => naturalCompare(a.id, b.id));
-
-    // No fallback list here. This used to substitute five invented attributes
-    // ("GA-1 Academic Grounding" etc.) when the department had none configured,
-    // so the report showed rows for GAs that were never defined. With no GAs
-    // the report now says so (see the empty states in the chart and table).
-
-    let overallPassTotal = 0;
-    let overallAssessmentsCount = 0;
-
-    const gaMetrics = activeGAs.map(ga => {
-      let passedCount = 0;
-      let failedCount = 0;
-      let assessedCount = 0;
-
-      filteredStudents.forEach(s => {
-        const score = calculateStudentGAScore(s, ga.id, data.courses, instructorCourses);
-        if (score === null) {
-          return; // Skip this student as they are not assessed for this GA
-        }
-        assessedCount++;
-        if (score >= 50) {
-          passedCount++;
-        } else {
-          failedCount++;
-        }
-      });
-
-      const totalCount = assessedCount;
-      const percentage = totalCount > 0 ? Math.round((passedCount / totalCount) * 100) : 0;
-
-      if (totalCount > 0) {
-        overallPassTotal += passedCount;
-        overallAssessmentsCount += totalCount;
-      }
-
-      return {
-        id: ga.id,
-        name: ga.name,
-        description: ga.description,
-        totalCount,
-        passedCount,
-        failedCount,
-        percentage
-      };
-    });
-
-    const overallPassRate = overallAssessmentsCount > 0 
-      ? Math.round((overallPassTotal / overallAssessmentsCount) * 100) 
-      : 0;
-
-    // Sort to find top and bottom GAs, only considering GAs with actual assessments (totalCount > 0)
-    let topGA = 'N/A';
-    let bottomGA = 'N/A';
-
-    const assessedMetrics = gaMetrics.filter(m => m.totalCount > 0);
-    if (assessedMetrics.length > 0) {
-      const sortedByPass = [...assessedMetrics].sort((a, b) => b.percentage - a.percentage);
-      topGA = `${sortedByPass[0].id} (${sortedByPass[0].percentage}%)`;
-      bottomGA = `${sortedByPass[sortedByPass.length - 1].id} (${sortedByPass[sortedByPass.length - 1].percentage}%)`;
-    }
-
-    return {
-      gaMetrics,
-      overallPassRate,
-      topGA,
-      bottomGA,
-      filteredStudents
-    };
-  }, [data, students, selectedReportProgramId, selectedReportBatch, instructorCourses, activeDeptId]);
-
-  // Adapts various possible API response shapes from server-side to match reportMetrics structure
-  const serverReportMetrics = useMemo(() => {
-    if (selectedDataSource !== 'server' || !serverBatchReportData) {
-      return null;
-    }
-
-    let gaMetrics: any[] = [];
-    let overallPassRate = 0;
-    let topGA = 'N/A';
-    let bottomGA = 'N/A';
-    let filteredStudents: any[] = [];
-
-    // Identify where the GA metrics array is nested (supports camelCase, snake_case, directly an array, or attributes)
-    let rawGaList: any[] = [];
-    if (Array.isArray(serverBatchReportData)) {
-      rawGaList = serverBatchReportData;
-    } else if (serverBatchReportData) {
-      rawGaList = serverBatchReportData.gaMetrics || 
-                  serverBatchReportData.ga_metrics || 
-                  serverBatchReportData.attributes || 
-                  serverBatchReportData.data || 
-                  [];
-    }
-
-    // Map each GA metric supporting both camelCase and snake_case fields
-    gaMetrics = rawGaList.map((item: any) => {
-      const id = item.id || item.code || item.gaId || item.ga_id || 'GA';
-      const name = item.name || item.title || item.gaName || item.ga_name || item.description || '';
-      const description = item.description || item.gaDescription || item.ga_description || '';
-      
-      const totalCount = typeof item.totalCount === 'number' ? item.totalCount :
-                         (typeof item.total_count === 'number' ? item.total_count :
-                         (typeof item.cohortSize === 'number' ? item.cohortSize :
-                         (typeof item.cohort_size === 'number' ? item.cohort_size : 0)));
-                         
-      const passedCount = typeof item.passedCount === 'number' ? item.passedCount :
-                          (typeof item.passed_count === 'number' ? item.passed_count : 0);
-                          
-      const failedCount = typeof item.failedCount === 'number' ? item.failedCount :
-                          (typeof item.failed_count === 'number' ? item.failed_count : 0);
-                          
-      const percentage = typeof item.percentage === 'number' ? item.percentage :
-                         (typeof item.attainmentPercentage === 'number' ? item.attainmentPercentage :
-                         (typeof item.attainment_percentage === 'number' ? item.attainment_percentage : 0));
-                         
-      return { id, name, description, totalCount, passedCount, failedCount, percentage };
-    });
-
-    // Extract other top-level properties supporting both camelCase and snake_case
-    if (serverBatchReportData && !Array.isArray(serverBatchReportData)) {
-      overallPassRate = typeof serverBatchReportData.overallPassRate === 'number' ? serverBatchReportData.overallPassRate :
-                        (typeof serverBatchReportData.overall_pass_rate === 'number' ? serverBatchReportData.overall_pass_rate : 0);
-                        
-      topGA = serverBatchReportData.topGA || serverBatchReportData.top_ga || 'N/A';
-      bottomGA = serverBatchReportData.bottomGA || serverBatchReportData.bottom_ga || 'N/A';
-      
-      filteredStudents = Array.isArray(serverBatchReportData.filteredStudents) ? serverBatchReportData.filteredStudents :
-                         (Array.isArray(serverBatchReportData.filtered_students) ? serverBatchReportData.filtered_students : []);
-    }
-
-    if (gaMetrics.length > 0) {
-      if (overallPassRate === 0) {
-        let totalAssessed = 0;
-        let totalPassed = 0;
-        gaMetrics.forEach(m => {
-          if (m.totalCount > 0) {
-            totalAssessed += m.totalCount;
-            totalPassed += m.passedCount || Math.round(m.totalCount * (m.percentage / 100));
-          }
-        });
-        overallPassRate = totalAssessed > 0 ? Math.round((totalPassed / totalAssessed) * 100) : 0;
-      }
-
-      if (topGA === 'N/A' || bottomGA === 'N/A') {
-        const assessed = gaMetrics.filter(m => m.totalCount > 0 || m.percentage > 0);
-        if (assessed.length > 0) {
-          const sorted = [...assessed].sort((a, b) => b.percentage - a.percentage);
-          topGA = `${sorted[0].id} (${sorted[0].percentage}%)`;
-          bottomGA = `${sorted[sorted.length - 1].id} (${sorted[sorted.length - 1].percentage}%)`;
-        }
-      }
-    }
-
-    if (filteredStudents.length === 0) {
-      const maxCohort = Math.max(...gaMetrics.map(m => m.totalCount), 0);
-      if (maxCohort > 0) {
-        filteredStudents = new Array(maxCohort).fill({});
-      }
-    }
-
-    return {
-      gaMetrics,
-      overallPassRate,
-      topGA,
-      bottomGA,
-      filteredStudents
-    };
-  }, [selectedDataSource, serverBatchReportData]);
-
-  // Combined metrics selector to make rendering clean and seamless
-  const reportMetrics = useMemo(() => {
-    if (selectedDataSource === 'server' && serverReportMetrics) {
-      return serverReportMetrics;
-    }
-    return clientReportMetrics;
-  }, [selectedDataSource, serverReportMetrics, clientReportMetrics]);
+    if (activeModule !== 'more_reports' || moreReportType !== 'ga_batch' || students.length > 0) return;
+    apiService.getStudents()
+      .then(list => { if (Array.isArray(list)) setStudents(list); })
+      .catch(err => console.warn('Failed to load students for batch list:', err));
+  }, [activeModule, moreReportType, students.length]);
 
   // Filtered definitions of GAs matching selected program securely
   const filteredGAs = useMemo(() => {
@@ -2423,1319 +1804,6 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
               </div>
             )}
 
-            {/* ----------------- MODULE VIEW 5: GA ATTAINMENT REPORTS ----------------- */}
-            {activeModule === 'attainment_reports' && (
-              <div className="space-y-6 max-w-7xl mx-auto animate-in duration-200 fade-in-25">
-                
-                {/* Control Panel / Filter Banner */}
-                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
-                  <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
-                    <div>
-                      <h3 className="text-base font-black text-slate-800 flex items-center gap-2">
-                        <BarChart2 className="w-5 h-5 text-indigo-600" />
-                        Graduate Attribute (GA) Attainment Reports
-                      </h3>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Select a Program and Batch to query the active database outcomes. Passing threshold is 50% as per Compliance Criteria.
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-3 items-center w-full md:w-auto">
-                      {/* Program Selector */}
-                      <div className="flex flex-col gap-1 shrink-0">
-                        <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Programme</label>
-                        <select
-                          value={selectedReportProgramId}
-                          onChange={(e) => {
-                            setSelectedReportProgramId(e.target.value);
-                            setSelectedReportCourseCode('all'); // reset course on program change
-                          }}
-                          className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer min-w-[150px] shadow-xs"
-                        >
-                          <option value="all">All Programmes</option>
-                          {data?.programs?.filter(p => p.departmentId === activeDeptId).map(p => (
-                            <option key={p.id} value={p.id}>{p.code.toUpperCase()}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Batch Selector */}
-                      <div className="flex flex-col gap-1 shrink-0">
-                        <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Batch</label>
-                        <select
-                          value={selectedReportBatch}
-                          onChange={(e) => {
-                            setSelectedReportBatch(e.target.value);
-                          }}
-                          className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer min-w-[120px] shadow-xs"
-                        >
-                          {(() => {
-                            const extractedBatches = Array.from(new Set(students.map(s => getStudentBatchCode(s.regNo))));
-                            if (extractedBatches.length === 0) {
-                              return (
-                                <>
-                                  <option value="fa22">FA22</option>
-                                  <option value="fa23">FA23</option>
-                                  <option value="sp24">SP24</option>
-                                  <option value="fa24">FA24</option>
-                                </>
-                              );
-                            }
-                            return extractedBatches.sort().map((b: any) => (
-                              <option key={b} value={b}>{(b as string).toUpperCase()}</option>
-                            ));
-                          })()}
-                        </select>
-                      </div>
-
-                      {/* Course Selector - Only visible if specific program chosen */}
-                      {selectedReportProgramId !== 'all' && (
-                        <div className="flex flex-col gap-1 shrink-0">
-                          <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Course Assessment Sheet</label>
-                          <select
-                            value={selectedReportCourseCode}
-                            onChange={(e) => setSelectedReportCourseCode(e.target.value)}
-                            className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer min-w-[180px] shadow-xs"
-                          >
-                            <option value="all">All Courses (GA Summary)</option>
-                            {data?.courses
-                              .filter(c => c.departmentId === activeDeptId && c.programId === selectedReportProgramId)
-                              .map(c => (
-                                <option key={c.id} value={c.code}>{c.code} — {c.title}</option>
-                              ))}
-                          </select>
-                        </div>
-                      )}
-
-                      {/* Compiler Engine Selector */}
-                      <div className="flex flex-col gap-1 shrink-0">
-                        <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Compiler Engine</label>
-                        <div className="flex bg-slate-100 p-1 rounded-xl shadow-inner border border-slate-200">
-                          <button
-                            onClick={() => {
-                              setSelectedDataSource('client');
-                              setIsServerBatchReportFallback(false);
-                            }}
-                            className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer ${selectedDataSource === 'client' ? 'bg-white text-indigo-950 shadow-xs' : 'text-slate-500 hover:text-slate-900'}`}
-                          >
-                            <Cpu className="w-3.5 h-3.5 text-indigo-650" />
-                            <span>Client</span>
-                          </button>
-                          <button
-                            onClick={() => setSelectedDataSource('server')}
-                            className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer ${selectedDataSource === 'server' ? 'bg-white text-indigo-950 shadow-xs' : 'text-slate-500 hover:text-slate-900'}`}
-                          >
-                            <Server className="w-3.5 h-3.5 text-indigo-650" />
-                            <span>Server</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Report Type Selector Tabs */}
-                <div className="flex bg-slate-100 p-1.5 rounded-2xl max-w-md shadow-xs">
-                  <button
-                    onClick={() => {
-                      setSelectedReportType('plo');
-                      setSelectedReportCourseCode('all');
-                    }}
-                    className={`flex-1 py-2.5 px-4 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer ${selectedReportType === 'plo' ? 'bg-white text-indigo-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
-                  >
-                    <Award className="w-4.5 h-4.5 text-indigo-650" />
-                    <span>PLO / GA Attainment</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedReportType('clo');
-                      setSelectedReportCourseCode('all');
-                    }}
-                    className={`flex-1 py-2.5 px-4 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer ${selectedReportType === 'clo' ? 'bg-white text-indigo-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
-                  >
-                    <GraduationCap className="w-4.5 h-4.5 text-indigo-650" />
-                    <span>CLO Course-Wise Attainment</span>
-                  </button>
-                </div>
-
-                {isServerBatchReportFallback && !loadingReports && !(selectedDataSource === 'server' && loadingServerBatchReport) && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm animate-in fade-in slide-in-from-top-4 duration-300">
-                    <div className="flex items-center gap-3.5 text-left">
-                      <div className="bg-amber-100 border border-amber-200 p-2.5 rounded-2xl text-amber-700 shrink-0">
-                        <AlertCircle className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h5 className="text-xs font-black text-amber-900 uppercase tracking-wide">Live Server Offline (Displaying Client Calculations)</h5>
-                        <p className="text-[10px] text-amber-700 font-bold mt-0.5 leading-relaxed">
-                          The remote database is currently unreachable or timed out. Falling back to secure, real-time client-side calculations automatically.
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        setLoadingServerBatchReport(true);
-                        setIsServerBatchReportFallback(false);
-                        try {
-                          const programId = selectedReportProgramId === 'all' ? undefined : selectedReportProgramId;
-                          const result = await apiService.getProgramGAAttainmentBatch(
-                            selectedReportBatch,
-                            activeDeptId,
-                            programId
-                          );
-                          setServerBatchReportData(result);
-                        } catch (err: any) {
-                          console.error("Retry failed:", err);
-                          setIsServerBatchReportFallback(true);
-                        } finally {
-                          setLoadingServerBatchReport(false);
-                        }
-                      }}
-                      className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer self-start md:self-center shrink-0 active:scale-95"
-                    >
-                      Retry Server Connection
-                    </button>
-                  </div>
-                )}
-
-                {loadingReports || (selectedDataSource === 'server' && loadingServerBatchReport) ? (
-                  <div className="bg-white border border-slate-200 rounded-3xl p-16 text-center space-y-4 shadow-xs">
-                    <Loader2 className="w-10 h-10 text-indigo-600 animate-spin mx-auto" />
-                    <p className="text-xs text-slate-500 font-bold">
-                      {selectedDataSource === 'server' 
-                        ? 'Querying remote database and calculating live Graduate Attribute scores...' 
-                        : 'Querying OBE and compiling Graduate Attribute scores...'}
-                    </p>
-                  </div>
-                ) : selectedDataSource === 'server' && serverBatchReportError ? (
-                  <div className="bg-white border border-slate-200 rounded-3xl p-16 text-center space-y-4 shadow-xs">
-                    <AlertCircle className="w-12 h-12 text-rose-500 mx-auto" />
-                    <h4 className="text-sm font-bold text-slate-800">Failed to Compile Server GA Report</h4>
-                    <p className="text-xs text-rose-600 max-w-md mx-auto font-medium bg-rose-50 border border-rose-100 p-3 rounded-2xl">
-                      {serverBatchReportError}
-                    </p>
-                    <button
-                      onClick={async () => {
-                        setLoadingServerBatchReport(true);
-                        setServerBatchReportError(null);
-                        try {
-                          const programId = selectedReportProgramId === 'all' ? undefined : selectedReportProgramId;
-                          const result = await apiService.getProgramGAAttainmentBatch(
-                            selectedReportBatch,
-                            activeDeptId,
-                            programId
-                          );
-                          setServerBatchReportData(result);
-                        } catch (err: any) {
-                          setServerBatchReportError(err?.message || "Failed to load server-side batch GA report.");
-                        } finally {
-                          setLoadingServerBatchReport(false);
-                        }
-                      }}
-                      className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors cursor-pointer"
-                    >
-                      Retry Compiler Sync
-                    </button>
-                  </div>
-                ) : reportMetrics.filteredStudents.length === 0 ? (
-                  <div className="bg-white border border-slate-200 rounded-3xl p-16 text-center space-y-3 shadow-xs">
-                    <Sliders className="w-12 h-12 text-slate-300 mx-auto" />
-                    <h4 className="text-sm font-bold text-slate-700">No Student Enrollments Found</h4>
-                    <p className="text-xs text-slate-400 max-w-md mx-auto">
-                      There are no registered students in department <span className="font-bold text-indigo-950 font-mono">{(activeDeptId || '').toUpperCase()}</span> for batch <span className="font-bold text-indigo-950 font-mono">{(selectedReportBatch || 'FA22').toUpperCase()}</span> matching your filters.
-                    </p>
-                  </div>
-                ) : selectedReportType === 'clo' ? (
-                  /* ----------------- CLO COURSE-WISE ATTAINMENT REPORT VIEW ----------------- */
-                  <div className="space-y-6">
-                    {/* Header Summary */}
-                    <div className="bg-gradient-to-br from-[#1e1b4b] to-[#312e81] rounded-3xl p-6 text-white shadow-md relative overflow-hidden">
-                      <div className="absolute right-0 top-0 bottom-0 opacity-10 select-none pointer-events-none flex items-center pr-10">
-                        <GraduationCap className="w-48 h-48 text-white" />
-                      </div>
-                      <div className="relative z-10 space-y-2">
-                        <span className="text-[10px] font-mono font-bold tracking-widest text-indigo-300 bg-indigo-500/20 border border-indigo-400/30 px-3 py-1 rounded-full uppercase">
-                          Academic Report Matrix
-                        </span>
-                        <h3 className="text-xl font-black text-white">Course-Wise CLO Attainment Overview</h3>
-                        <p className="text-xs text-indigo-200 max-w-xl">
-                          This report shows the Cohort Pass Rate per CLO for all courses of the selected program in batch <span className="font-mono text-white font-bold">{selectedReportBatch.toUpperCase()}</span>. Click any course to expand individual OBE Question averages.
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Filter / Search Row */}
-                    <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
-                      <div className="relative w-full sm:max-w-md">
-                        <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-slate-400" />
-                        <input
-                          type="text"
-                          value={cloCourseSearch}
-                          onChange={(e) => setCloCourseSearch(e.target.value)}
-                          placeholder="Search courses by code or title..."
-                          className="w-full pl-10 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 font-medium"
-                        />
-                      </div>
-                      <div className="text-slate-400 font-medium text-xs font-sans">
-                        Showing <span className="text-slate-800 font-bold font-mono">
-                          {(() => {
-                            const progCourses = data?.courses.filter(c => 
-                              c.departmentId === activeDeptId && 
-                              (selectedReportProgramId === 'all' ? true : c.programId === selectedReportProgramId)
-                            ) || [];
-                            const filtered = progCourses.filter(c => 
-                              c.code.toLowerCase().includes(cloCourseSearch.toLowerCase()) || 
-                              c.title.toLowerCase().includes(cloCourseSearch.toLowerCase())
-                            );
-                            return filtered.length;
-                          })()}
-                        </span> of <span className="text-slate-800 font-bold font-mono">
-                          {(() => {
-                            const progCourses = data?.courses.filter(c => 
-                              c.departmentId === activeDeptId && 
-                              (selectedReportProgramId === 'all' ? true : c.programId === selectedReportProgramId)
-                            ) || [];
-                            return progCourses.length;
-                          })()}
-                        </span> Courses
-                      </div>
-                    </div>
-
-                    {/* Courses CLO Table */}
-                    <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs border-collapse">
-                          <thead>
-                            <tr className="bg-slate-100 text-slate-505 font-bold uppercase text-[9px] tracking-wider border-b border-slate-200 select-none">
-                              <th className="px-5 py-3 w-12"></th>
-                              <th className="px-5 py-3 w-32">Course Code</th>
-                              <th className="px-5 py-3">Course Title</th>
-                              <th className="px-5 py-3 text-center w-28">Assessed Cohort</th>
-                              <th className="px-5 py-3 text-center w-80">CLO Attainment (Target 50%)</th>
-                              <th className="px-5 py-3 text-center w-36">Average Attainment</th>
-                              <th className="px-5 py-3 text-center w-36">Audit Compliance</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-150">
-                            {(() => {
-                              const progCourses = data?.courses.filter(c => 
-                                c.departmentId === activeDeptId && 
-                                (selectedReportProgramId === 'all' ? true : c.programId === selectedReportProgramId)
-                              ) || [];
-                              const filtered = progCourses.filter(c => 
-                                c.code.toLowerCase().includes(cloCourseSearch.toLowerCase()) || 
-                                c.title.toLowerCase().includes(cloCourseSearch.toLowerCase())
-                              );
-
-                              if (filtered.length === 0) {
-                                return (
-                                  <tr>
-                                    <td colSpan={7} className="px-5 py-12 text-center text-slate-400 italic font-sans">
-                                      No courses matched your search criteria.
-                                    </td>
-                                  </tr>
-                                );
-                              }
-
-                              return filtered.map((course, cIdx) => {
-                                const cloAttainments = getCourseCLOAttainment(course.code);
-                                const assessedCloCount = cloAttainments.filter(a => a.percentage !== null).length;
-                                const avgAttainment = assessedCloCount > 0 
-                                  ? Math.round(cloAttainments.reduce((acc, a) => acc + (a.percentage ?? 0), 0) / assessedCloCount)
-                                  : null;
-
-                                const instCourse = instructorCourses.find(ic => ic.code === course.code);
-                                const cohortSize = instCourse 
-                                  ? (instCourse.students?.filter((s: any) => getStudentBatchCode(s.regNo) === selectedReportBatch).length ?? 0)
-                                  : reportMetrics.filteredStudents.length;
-
-                                const isExpanded = expandedReportCourse === course.code;
-
-                                return (
-                                  <Fragment key={`${course.id || course.code}-${cIdx}`}>
-                                    <tr className={`hover:bg-slate-50/55 transition-colors ${isExpanded ? 'bg-indigo-50/15' : ''}`}>
-                                      <td className="px-5 py-3.5 text-center">
-                                        <button
-                                          onClick={() => setExpandedReportCourse(isExpanded ? null : course.code)}
-                                          className="text-slate-400 hover:text-indigo-650 cursor-pointer focus:outline-none transition-colors"
-                                        >
-                                          {isExpanded ? (
-                                            <ChevronDown className="w-4 h-4 text-indigo-600 animate-in zoom-in-75" />
-                                          ) : (
-                                            <ChevronRight className="w-4 h-4 hover:translate-x-0.5 transition-transform" />
-                                          )}
-                                        </button>
-                                      </td>
-                                      <td className="px-5 py-3.5 font-mono font-bold text-slate-900 tracking-tight">
-                                        {course.code}
-                                      </td>
-                                      <td className="px-5 py-3.5 font-medium text-slate-700">
-                                        <div>{course.title}</div>
-                                        <div className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wide font-medium">{course.type} • {course.creditHours} Credits</div>
-                                      </td>
-                                      <td className="px-5 py-3.5 text-center font-mono font-bold text-slate-500">
-                                        {cohortSize > 0 ? `${cohortSize} Students` : '0 (Not Assessed)'}
-                                      </td>
-                                      <td className="px-5 py-3.5">
-                                        <div className="flex gap-1.5 justify-center">
-                                          {cloAttainments.map((clo, cloIdx) => {
-                                            const pct = clo.percentage;
-                                            return (
-                                              <div 
-                                                key={`${clo.code}-${cloIdx}`}
-                                                className={`flex-1 flex flex-col items-center p-1.5 rounded-lg border text-center relative group min-w-[56px] transition-all ${
-                                                  pct === null 
-                                                    ? 'bg-slate-50 border-slate-200 text-slate-400' 
-                                                    : pct >= 50 
-                                                    ? 'bg-blue-50 border-blue-150 text-blue-800 hover:bg-blue-100 hover:border-blue-200' 
-                                                    : 'bg-rose-50 border-rose-150 text-rose-800 hover:bg-rose-100 hover:border-rose-200'
-                                                }`}
-                                              >
-                                                <div className="absolute bottom-full mb-1 px-2 py-1 bg-slate-900 text-white text-[8px] rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 font-bold whitespace-nowrap z-30 font-sans">
-                                                  {clo.totalStudents} assessed
-                                                </div>
-                                                <span className="text-[9px] font-black tracking-tight">{clo.code}</span>
-                                                <span className="text-[10px] font-mono font-black mt-0.5">
-                                                  {pct !== null ? `${pct}%` : '—'}
-                                                </span>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </td>
-                                      <td className="px-5 py-3.5 text-center">
-                                        {avgAttainment !== null ? (
-                                          <div className="inline-flex items-center gap-1.5 bg-indigo-50 border border-indigo-150/50 px-2.5 py-1 rounded-full">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-                                            <span className="font-mono font-extrabold text-indigo-950 text-xs">{avgAttainment}%</span>
-                                          </div>
-                                        ) : (
-                                          <span className="text-slate-400 font-mono text-xs font-bold">—</span>
-                                        )}
-                                      </td>
-                                      <td className="px-5 py-3.5 text-center">
-                                        {avgAttainment !== null ? (
-                                          <span className={`px-2.5 py-1 rounded-full text-[9px] font-black border tracking-wider uppercase inline-block ${
-                                            avgAttainment >= 50 
-                                              ? 'bg-blue-100 text-blue-800 border-blue-200 shadow-xs' 
-                                              : 'bg-rose-100 text-rose-800 border-rose-200 shadow-xs'
-                                          }`}>
-                                            {avgAttainment >= 50 ? 'Compliant' : 'Audit Required'}
-                                          </span>
-                                        ) : (
-                                          <span className="text-slate-400 italic text-[10px] font-bold">Unassessed</span>
-                                        )}
-                                      </td>
-                                    </tr>
-
-                                    {isExpanded && (
-                                      <tr>
-                                        <td colSpan={7} className="bg-slate-50/80 px-8 py-5 border-y border-slate-150">
-                                          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
-                                            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                                              <div className="flex items-center gap-2">
-                                                <Sliders className="w-4 h-4 text-indigo-650 animate-pulse" />
-                                                <h4 className="text-xs font-black text-slate-800 uppercase tracking-tight">
-                                                  OBE Assessment Question & Performance Breakdown
-                                                </h4>
-                                              </div>
-                                              <span className="text-[10px] font-mono font-black text-slate-400">
-                                                COHORT SIZE: {cohortSize} STUDENTS
-                                              </span>
-                                            </div>
-
-                                            {(() => {
-                                              const questions = instCourse?.obeQuestions || [];
-                                              const batchStudents = instCourse?.students?.filter((s: any) => getStudentBatchCode(s.regNo) === selectedReportBatch) || [];
-                                              if (questions.length === 0) {
-                                                return (
-                                                  <div className="text-center py-6 text-slate-400 italic text-xs font-sans">
-                                                    No detailed OBE Assessment questions mapped for this course yet.
-                                                  </div>
-                                                );
-                                              }
-
-                                              return (
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                  {questions.map((q: any) => {
-                                                    const marksData = instCourse.obe_marks || instCourse.obeMarks || {};
-                                                    let sum = 0;
-                                                    let count = 0;
-                                                    let passCount = 0;
-
-                                                    batchStudents.forEach((student: any) => {
-                                                      const score = getStudentMarks(marksData, student.regNo)?.[q.id];
-                                                      if (score !== undefined) {
-                                                        sum += score;
-                                                        count++;
-                                                        if ((score / q.maxMarks) >= 0.5) {
-                                                          passCount++;
-                                                        }
-                                                      }
-                                                    });
-
-                                                    const qAvg = count > 0 ? (sum / count) : null;
-                                                    const qPassPct = count > 0 ? Math.round((passCount / count) * 100) : null;
-
-                                                    return (
-                                                      <div 
-                                                        key={q.id} 
-                                                        className="border border-slate-150 rounded-xl p-3 bg-slate-50/50 flex items-center justify-between gap-4 hover:border-slate-300 transition-all"
-                                                      >
-                                                        <div className="space-y-1">
-                                                          <div className="flex items-center gap-2">
-                                                            <span className="text-xs font-extrabold text-slate-800 font-sans">{q.id.toUpperCase()}</span>
-                                                            <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 font-mono text-[8.5px] font-black uppercase">
-                                                              {q.category} • Unit {q.unitNo}
-                                                            </span>
-                                                          </div>
-                                                          <div className="flex items-center gap-1.5">
-                                                            <span className="text-[9.5px] text-slate-400 font-bold uppercase tracking-wider">Mapped CLOs:</span>
-                                                            {q.mappedCLOs?.map((clo: string) => (
-                                                              <span key={clo} className="px-1.5 py-0.2 rounded bg-indigo-50 border border-indigo-150/50 text-indigo-700 font-mono font-bold text-[8.5px]">
-                                                                {clo}
-                                                              </span>
-                                                            ))}
-                                                          </div>
-                                                        </div>
-
-                                                        <div className="text-right">
-                                                          <div className="text-[10px] text-slate-400 font-semibold">Max Marks: {q.maxMarks}</div>
-                                                          {qAvg !== null ? (
-                                                            <div className="mt-1 flex items-center gap-2 justify-end">
-                                                              <span className="text-[10px] text-slate-500 font-mono font-bold">
-                                                                Avg Score: <strong className="text-slate-800 font-black">{qAvg.toFixed(1)}</strong>
-                                                              </span>
-                                                              <span className={`px-1.5 py-0.5 rounded font-mono font-black text-[9px] ${
-                                                                qPassPct !== null && qPassPct >= 50 
-                                                                  ? 'bg-blue-50 text-blue-700' 
-                                                                  : 'bg-rose-50 text-rose-700'
-                                                              }`}>
-                                                                {qPassPct}% Pass
-                                                              </span>
-                                                            </div>
-                                                          ) : (
-                                                            <span className="text-slate-400 italic text-[10px] block mt-0.5 font-bold">Unassessed</span>
-                                                          )}
-                                                        </div>
-                                                      </div>
-                                                    );
-                                                  })}
-                                                </div>
-                                              );
-                                            })()}
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    )}
-                                  </Fragment>
-                                );
-                              });
-                            })()}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                ) : selectedReportCourseCode !== 'all' ? (
-                  /* ----------------- COURSE LEVEL ASSESSMENT REPORT SHEET (image.png layout) ----------------- */
-                  (() => {
-                    const activeCourseCode = selectedReportCourseCode;
-                    const reportProgClean = selectedReportProgramId && selectedReportProgramId !== 'all' ? String(selectedReportProgramId).trim().toLowerCase() : '';
-                    const courseObj = data?.courses.find(c => c.code === activeCourseCode && (!reportProgClean || String(c.programId).trim().toLowerCase() === reportProgClean)) || data?.courses.find(c => c.code === activeCourseCode);
-                    const instCourse = (() => {
-                      const existing = instructorCourses.find(ic => ic.code === activeCourseCode);
-                      if (existing) return existing;
-                      
-                      // Fallback simulated detailed marks for beautiful sheet formatting
-                      const courseStudents = reportMetrics.filteredStudents;
-                      const codeStr = String(activeCourseCode || courseObj?.code || '').trim().toUpperCase();
-                      const titleStr = String(courseObj?.title || '').trim().toLowerCase();
-                      const isLab = courseObj?.courseType === 'Lab' || codeStr.endsWith('L') || titleStr.includes('lab');
-                      const dummyCategories = isLab ? [
-                        { name: "Mid Term", percentage: 20, units: 1 },
-                        { name: "Final", percentage: 30, units: 1 },
-                        { name: "Lab Reports", percentage: 10, units: 3 },
-                        { name: "Lab Performance", percentage: 10, units: 3 },
-                        { name: "Viva", percentage: 5, units: 1 },
-                        { name: "Assignments", percentage: 5, units: 3 },
-                        { name: "Quizzes", percentage: 5, units: 3 },
-                        { name: "Open Ended Lab", percentage: 5, units: 1 },
-                        { name: "Other Activities", percentage: 5, units: 1 },
-                        { name: "Project", percentage: 5, units: 1 }
-                      ] : [
-                        { name: "Assignments", percentage: 15, units: 3 },
-                        { name: "Quizzes", percentage: 10, units: 3 },
-                        { name: "Mid Term", percentage: 30, units: 1 },
-                        { name: "Final", percentage: 45, units: 1 }
-                      ];
-                      const dummyUnitsData: Record<string, any[]> = isLab ? {
-                        "Mid Term": [{ unitNo: 1, totalMarks: 30, weightage: 100 }],
-                        "Final": [{ unitNo: 1, totalMarks: 40, weightage: 100 }],
-                        "Lab Reports": [
-                          { unitNo: 1, totalMarks: 10, weightage: 33.3 },
-                          { unitNo: 2, totalMarks: 10, weightage: 33.3 },
-                          { unitNo: 3, totalMarks: 10, weightage: 33.4 }
-                        ],
-                        "Lab Performance": [
-                          { unitNo: 1, totalMarks: 10, weightage: 33.3 },
-                          { unitNo: 2, totalMarks: 10, weightage: 33.3 },
-                          { unitNo: 3, totalMarks: 10, weightage: 33.4 }
-                        ],
-                        "Viva": [{ unitNo: 1, totalMarks: 10, weightage: 100 }],
-                        "Assignments": [
-                          { unitNo: 1, totalMarks: 10, weightage: 33.3 },
-                          { unitNo: 2, totalMarks: 10, weightage: 33.3 },
-                          { unitNo: 3, totalMarks: 10, weightage: 33.4 }
-                        ],
-                        "Quizzes": [
-                          { unitNo: 1, totalMarks: 10, weightage: 33.3 },
-                          { unitNo: 2, totalMarks: 10, weightage: 33.3 },
-                          { unitNo: 3, totalMarks: 10, weightage: 33.4 }
-                        ],
-                        "Open Ended Lab": [{ unitNo: 1, totalMarks: 10, weightage: 100 }],
-                        "Other Activities": [{ unitNo: 1, totalMarks: 10, weightage: 100 }],
-                        "Project": [{ unitNo: 1, totalMarks: 30, weightage: 100 }]
-                      } : {
-                        "Assignments": [
-                          { unitNo: 1, totalMarks: 10, weightage: 33.3 },
-                          { unitNo: 2, totalMarks: 10, weightage: 33.3 },
-                          { unitNo: 3, totalMarks: 10, weightage: 33.4 }
-                        ],
-                        "Quizzes": [
-                          { unitNo: 1, totalMarks: 10, weightage: 33.3 },
-                          { unitNo: 2, totalMarks: 10, weightage: 33.3 },
-                          { unitNo: 3, totalMarks: 10, weightage: 33.4 }
-                        ],
-                        "Mid Term": [
-                          { unitNo: 1, totalMarks: 30, weightage: 100 }
-                        ],
-                        "Final": [
-                          { unitNo: 1, totalMarks: 50, weightage: 100 }
-                        ]
-                      };
-
-                      const simulatedStudents = courseStudents.map(s => {
-                        const hash = (s.regNo + activeCourseCode).split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-                        const marks: Record<string, number> = {};
-                        
-                        dummyCategories.forEach(cat => {
-                          for (let u = 1; u <= cat.units; u++) {
-                            const matchingUnit = dummyUnitsData[cat.name]?.find((un: any) => un.unitNo === u);
-                            const totalMarks = matchingUnit ? matchingUnit.totalMarks : 10;
-                            const passPercent = 45 + (hash % 50); // 45% to 95%
-                            marks[`${cat.name}-${u}`] = Math.round((passPercent / 100) * totalMarks * 10) / 10;
-                          }
-                        });
-
-                        return {
-                          regNo: s.regNo,
-                          name: s.name,
-                          marks
-                        };
-                      });
-
-                      return {
-                        id: `sim-${activeCourseCode}`,
-                        code: activeCourseCode,
-                        title: courseObj?.title || 'Unknown Course',
-                        categories: dummyCategories,
-                        unitsData: dummyUnitsData,
-                        students: simulatedStudents
-                      };
-                    })();
-
-                    return (
-                      <div className="space-y-4">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => window.print()}
-                            className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-700 flex items-center gap-1.5 shadow-sm transition-all cursor-pointer select-none"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                            Print Assessment Sheet
-                          </button>
-                        </div>
-
-                        {/* Printable Area Card */}
-                        <div id="printable-course-assessment-sheet" className="bg-white border border-slate-300 rounded-2xl shadow-sm p-6 md:p-8 font-sans text-slate-800 border-double border-4">
-                          {/* Centered Header */}
-                          <div className="text-center pb-6 border-b border-slate-300">
-                            <h2 className="text-lg font-serif font-extrabold uppercase tracking-wide text-slate-900">Course Assessment Report</h2>
-                            <p className="text-xs text-indigo-950 font-bold mt-1">Department: {activeDepartment?.name}</p>
-                          </div>
-
-                          {/* Info Rows */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-3 gap-x-6 text-xs pt-6 pb-6 border-b border-slate-200">
-                            <div>
-                              <span className="text-slate-400 font-bold uppercase text-[10px]">Course Name:</span>
-                              <span className="ml-2 font-black text-slate-950">{courseObj?.title}</span>
-                            </div>
-                            <div>
-                              <span className="text-slate-400 font-bold uppercase text-[10px]">Session / Batch:</span>
-                              <span className="ml-2 font-black text-slate-950">{(selectedReportBatch || 'FA22').toUpperCase()} Semester</span>
-                            </div>
-                            <div>
-                              <span className="text-slate-400 font-bold uppercase text-[10px]">Course Code:</span>
-                              <span className="ml-2 font-mono font-black text-slate-950">{activeCourseCode}</span>
-                            </div>
-                            <div>
-                              <span className="text-slate-400 font-bold uppercase text-[10px]">Instructor:</span>
-                              <span className="ml-2 font-black text-slate-950">IU Faculty / Dept Admin</span>
-                            </div>
-                            <div>
-                              <span className="text-slate-400 font-bold uppercase text-[10px]">Section:</span>
-                              <span className="ml-2 font-black text-slate-950">A</span>
-                            </div>
-                            <div>
-                              <span className="text-slate-400 font-bold uppercase text-[10px]">Passing Criteria:</span>
-                              <span className="ml-2 font-black text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-md">50% Marks (KPI)</span>
-                            </div>
-                          </div>
-
-                          {/* Legend / KPI Row */}
-                          <div className="bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl my-4 text-[10px] text-slate-500 font-bold flex flex-wrap gap-4 items-center justify-between">
-                            <span className="flex items-center gap-1.5">
-                              <Info className="w-3.5 h-3.5 text-indigo-600" />
-                              Legend: CLO KPI - 50.0%, Filter: Without CQI
-                            </span>
-                            <span className="text-rose-600">X — Not able to attain as per KPI threshold (&lt;50%)</span>
-                          </div>
-
-                          {/* The Big Assessment Spreadsheet */}
-                          <div className="overflow-x-auto border border-slate-300 rounded-xl">
-                            <table className="w-full border-collapse text-[11px] text-left border-slate-300">
-                              <thead>
-                                {/* Top Category Header Row */}
-                                <tr className="bg-slate-100 border-b border-slate-300">
-                                  <th className="px-3 py-2 border-r border-slate-300 text-slate-700 font-bold w-12 text-center" rowSpan={2}>Sr#</th>
-                                  <th className="px-3 py-2 border-r border-slate-300 text-slate-700 font-bold w-36" rowSpan={2}>Registration No</th>
-                                  <th className="px-3 py-2 border-r border-slate-300 text-slate-700 font-bold w-48" rowSpan={2}>Student Name</th>
-                                  
-                                  {/* Map categories as columns */}
-                                  {instCourse.categories?.map((cat: any) => (
-                                    <th 
-                                      key={cat.name} 
-                                      className="px-3 py-1 text-center border-r border-slate-300 text-slate-800 font-bold bg-indigo-50/50"
-                                      colSpan={cat.units + 2}
-                                    >
-                                      {cat.name} ({cat.percentage}%)
-                                    </th>
-                                  ))}
-                                  
-                                  <th className="px-3 py-2 text-center text-slate-800 font-black bg-indigo-100/50" rowSpan={2}>Grand Total %</th>
-                                  <th className="px-3 py-2 text-center text-slate-800 font-black bg-indigo-100/50 w-24" rowSpan={2}>GA Attainment Status</th>
-                                </tr>
-
-                                {/* Sub unit items header row */}
-                                <tr className="bg-slate-50 border-b border-slate-300">
-                                  {instCourse.categories?.map((cat: any) => {
-                                    const unitsList = Array.from({ length: cat.units }, (_, i) => i + 1);
-                                    return (
-                                      <Fragment key={cat.name}>
-                                        {unitsList.map(u => {
-                                          const unitData = instCourse.unitsData?.[cat.name]?.find((un: any) => un.unitNo === u);
-                                          return (
-                                            <th key={`${cat.name}-${u}`} className="px-1.5 py-1 text-center border-r border-slate-200 text-slate-500 font-mono text-[9px] w-12 font-semibold">
-                                              U{u} <span className="block text-[8px] text-slate-400 font-sans">({unitData?.totalMarks || 10}m)</span>
-                                            </th>
-                                          );
-                                        })}
-                                        <th className="px-2 py-1 text-center border-r border-slate-200 text-slate-700 font-bold bg-slate-100/60 w-14">Total</th>
-                                        <th className="px-2 py-1 text-center border-r border-slate-300 text-slate-700 font-bold bg-slate-100/60 w-14">%</th>
-                                      </Fragment>
-                                    );
-                                  })}
-                                </tr>
-                              </thead>
-
-                              <tbody className="divide-y divide-slate-200">
-                                {instCourse.students?.map((std: any, idx: number) => {
-                                  // Compute grand total and individual category details
-                                  let grandTotalPercentage = 0;
-                                  let categoriesCount = 0;
-                                  let categoryPassDetails: Record<string, { totalMarks: number, score: number, pct: number, isPassed: boolean }> = {};
-
-                                  instCourse.categories?.forEach((cat: any) => {
-                                    if (cat.percentage > 0) {
-                                      let categoryObtainedSum = 0;
-                                      let categoryMaxMarksSum = 0;
-                                      const existingUnits = instCourse.unitsData?.[cat.name] || [];
-                                      
-                                      for (let u = 1; u <= cat.units; u++) {
-                                        const matchingUnit = existingUnits.find((unit: any) => unit.unitNo === u);
-                                        const questions = matchingUnit?.questions || [];
-                                        if (questions.length > 0) {
-                                          questions.forEach((q: any) => {
-                                            categoryMaxMarksSum += q.maxMarks || 0;
-                                            const qKey = `q-${cat.name}-${u}-${q.id}`;
-                                            categoryObtainedSum += std.marks?.[qKey] ?? 0;
-                                          });
-                                        } else {
-                                          const totalMarks = matchingUnit ? matchingUnit.totalMarks : 10;
-                                          categoryMaxMarksSum += totalMarks;
-                                          const dKey = `${cat.name}-${u}`;
-                                          categoryObtainedSum += std.marks?.[dKey] ?? 0;
-                                        }
-                                      }
-                                      
-                                      const categoryContribution = categoryMaxMarksSum > 0
-                                        ? (categoryObtainedSum / categoryMaxMarksSum) * cat.percentage
-                                        : 0;
-                                      grandTotalPercentage += categoryContribution;
-                                      categoriesCount++;
-
-                                      const pct = categoryMaxMarksSum > 0 ? (categoryObtainedSum / categoryMaxMarksSum) * 100 : 0;
-                                      categoryPassDetails[cat.name] = {
-                                        totalMarks: categoryMaxMarksSum,
-                                        score: categoryObtainedSum,
-                                        pct,
-                                        isPassed: pct >= 50
-                                      };
-                                    }
-                                  });
-
-                                  const isOverallPassed = grandTotalPercentage >= 50;
-
-                                  return (
-                                    <tr key={std.regNo} className="hover:bg-slate-50/50 transition-colors font-medium text-slate-700">
-                                      <td className="px-3 py-2 text-center border-r border-slate-300 font-mono text-slate-400">{idx + 1}</td>
-                                      <td className="px-3 py-2 border-r border-slate-300 font-mono font-bold text-slate-900">{std.regNo}</td>
-                                      <td className="px-3 py-2 border-r border-slate-300 font-bold text-slate-800">{std.name}</td>
-
-                                      {/* Marks columns */}
-                                      {instCourse.categories?.map((cat: any) => {
-                                        const unitsList = Array.from({ length: cat.units }, (_, i) => i + 1);
-                                        const catDetail = categoryPassDetails[cat.name] || { totalMarks: 10, score: 0, pct: 0, isPassed: true };
-                                        
-                                        return (
-                                          <Fragment key={cat.name}>
-                                            {unitsList.map(u => {
-                                              const unitId = `${cat.name}-${u}`;
-                                              const mark = std.marks?.[unitId] ?? 0;
-                                              return (
-                                                <td key={`${std.regNo}-${cat.name}-${u}`} className="px-1.5 py-2 text-center border-r border-slate-200 font-mono font-medium text-slate-600">
-                                                  {mark.toFixed(1)}
-                                                </td>
-                                              );
-                                            })}
-                                            {/* Category Total */}
-                                            <td className="px-2 py-2 text-center border-r border-slate-200 font-mono font-bold text-slate-900 bg-slate-50/50">
-                                              {catDetail.score.toFixed(1)}
-                                            </td>
-                                            {/* Category % */}
-                                            <td className={`px-2 py-2 text-center border-r border-slate-300 font-mono font-extrabold bg-slate-50/50 ${
-                                              catDetail.isPassed ? 'text-blue-700' : 'text-rose-600'
-                                            }`}>
-                                              {catDetail.pct % 1 === 0 ? catDetail.pct.toFixed(0) : catDetail.pct.toFixed(2).replace(/\.?0+$/, '')}%
-                                              {!catDetail.isPassed && <span className="ml-1 text-[8px] font-black uppercase text-rose-500 bg-rose-50 px-1 py-0.5 rounded">X</span>}
-                                            </td>
-                                          </Fragment>
-                                        );
-                                      })}
-
-                                      {/* Grand Total */}
-                                      <td className="px-3 py-2 text-center font-mono font-black text-indigo-950 bg-indigo-50/30">
-                                        {grandTotalPercentage.toFixed(1)}%
-                                      </td>
-                                      
-                                      {/* GA Status */}
-                                      <td className="px-3 py-2 text-center border-l border-slate-300">
-                                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black border ${
-                                          isOverallPassed 
-                                            ? 'bg-blue-50 text-blue-700 border-blue-200' 
-                                            : 'bg-rose-50 text-rose-700 border-rose-200'
-                                        }`}>
-                                          {isOverallPassed ? 'ATTAINED' : 'NOT ATTAINED'}
-                                        </span>
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()
-                ) : (
-                  /* ----------------- GENERAL GA ATTAINMENT REPORT VIEW ----------------- */
-                  <div className="space-y-6">
-                    {/* Summary statistics row */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      {/* Stat 1 */}
-                      <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex items-center gap-4 hover:border-indigo-100 transition-all">
-                        <div className="bg-indigo-50 border border-indigo-100 p-3.5 rounded-2xl text-indigo-650 shrink-0">
-                          <GraduationCap className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Total Cohort Count</p>
-                          <h4 className="text-xl font-black text-slate-800 font-mono mt-1">{reportMetrics.filteredStudents.length} Students</h4>
-                          <p className="text-[9px] text-slate-400 font-semibold mt-0.5">Assessed in {selectedReportBatch.toUpperCase()} batch</p>
-                        </div>
-                      </div>
-
-                      {/* Stat 2 */}
-                      <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex items-center gap-4 hover:border-indigo-100 transition-all">
-                        <div className="bg-blue-50 border border-blue-100 p-3.5 rounded-2xl text-blue-650 shrink-0">
-                          <TrendingUp className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Overall GA Attainment</p>
-                          <h4 className="text-xl font-black text-slate-800 font-mono mt-1">{reportMetrics.overallPassRate}%</h4>
-                          <p className="text-[9px] text-slate-400 font-semibold mt-0.5">Passing rate across all metrics</p>
-                        </div>
-                      </div>
-
-                      {/* Stat 3 */}
-                      <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex items-center gap-4 hover:border-indigo-100 transition-all">
-                        <div className="bg-amber-50 border border-amber-100 p-3.5 rounded-2xl text-amber-650 shrink-0">
-                          <Award className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Highest Attainment</p>
-                          <h4 className="text-sm font-black text-slate-800 mt-1 uppercase font-mono">{reportMetrics.topGA}</h4>
-                          <p className="text-[9px] text-slate-400 font-semibold mt-0.5">Top performing criteria</p>
-                        </div>
-                      </div>
-
-                      {/* Stat 4 */}
-                      <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex items-center gap-4 hover:border-indigo-100 transition-all">
-                        <div className="bg-rose-50 border border-rose-100 p-3.5 rounded-2xl text-rose-650 shrink-0">
-                          <AlertCircle className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Lowest Attainment</p>
-                          <h4 className="text-sm font-black text-slate-800 mt-1 uppercase font-mono">{reportMetrics.bottomGA}</h4>
-                          <p className="text-[9px] text-slate-400 font-semibold mt-0.5">Needs curricular audit support</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bar chart representation */}
-                    <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
-                      <div>
-                        <h4 className="text-sm font-black text-slate-800 flex items-center gap-2">
-                          <Activity className="w-4 h-4 text-indigo-600" />
-                          Cohort GA Attainment Distribution Histogram (Pass Threshold: 50% Marks)
-                        </h4>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          Displays the percentage of students in the selected batch who successfully achieved a score of 50% or above in each Graduate Attribute (GA).
-                        </p>
-                      </div>
-
-                      {/* The Bar graph itself */}
-                      <div className="bg-slate-50/50 border border-slate-200 rounded-2xl p-6">
-                        <div className="h-64 flex items-end gap-3 md:gap-4.5 border-b border-slate-300 pb-1.5 w-full relative">
-                          
-                          {/* Y-axis labels */}
-                          <div className="absolute left-0 right-0 top-0 bottom-0 flex flex-col justify-between pointer-events-none text-[8.5px] font-mono text-slate-300 font-bold">
-                            <div className="border-b border-slate-200/60 pb-0.5 w-full text-left">100% Attainment</div>
-                            <div className="border-b border-slate-200/60 pb-0.5 w-full text-left">75%</div>
-                            <div className="border-b border-slate-200/60 pb-0.5 w-full text-left">50% Threshold</div>
-                            <div className="border-b border-slate-200/60 pb-0.5 w-full text-left">25%</div>
-                            <div className="w-full text-left">0%</div>
-                          </div>
-
-                          {reportMetrics.gaMetrics.length === 0 && (
-                            <div className="relative z-10 w-full self-center text-center text-xs font-semibold text-slate-500">
-                              No Graduate Attributes are configured for this department/program yet.
-                            </div>
-                          )}
-
-                          {/* Render actual bars */}
-                          {reportMetrics.gaMetrics.map(metric => {
-                            const passedPct = metric.percentage;
-                            const isAssessed = metric.totalCount > 0;
-                            return (
-                              <div key={metric.id} className="flex-1 flex flex-col items-center group relative z-10">
-                                {/* Tooltip */}
-                                <div className="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 text-white text-[10px] p-3 rounded-lg shadow-xl pointer-events-none w-48 font-sans z-40 text-center leading-normal">
-                                  <p className="font-bold text-indigo-300 uppercase font-mono text-[9px] mb-1">{metric.id}</p>
-                                  {isAssessed ? (
-                                    <p className="font-black text-white text-xs mb-1">{passedPct}% Pass Rate</p>
-                                  ) : (
-                                    <p className="font-black text-slate-300 text-xs mb-1">No Graded Data</p>
-                                  )}
-                                  <div className="border-t border-slate-700 my-1 pt-1 text-slate-400 flex justify-between font-mono">
-                                    <span>Passed: {isAssessed ? metric.passedCount : '—'}</span>
-                                    <span>Failed: {isAssessed ? metric.failedCount : '—'}</span>
-                                  </div>
-                                  <p className="text-[9px] text-slate-400 mt-1 line-clamp-2">{metric.name}</p>
-                                </div>
-
-                                {/* Bar background and fill */}
-                                <div className="w-full bg-slate-200 rounded-t-lg h-48 flex items-end overflow-hidden border border-slate-300 shadow-xs hover:border-indigo-400 transition-colors">
-                                  {isAssessed && (
-                                    <div 
-                                      className={`w-full rounded-t-sm transition-all duration-500 hover:brightness-105 cursor-pointer ${
-                                        passedPct >= 80 
-                                          ? 'bg-blue-500' 
-                                          : passedPct >= 65 
-                                          ? 'bg-teal-500' 
-                                          : passedPct >= 50 
-                                          ? 'bg-amber-500' 
-                                          : 'bg-rose-500'
-                                      }`}
-                                      style={{ height: `${passedPct}%` }}
-                                    />
-                                  )}
-                                </div>
-
-                                {/* Label badge */}
-                                <span className="font-mono text-[9px] font-black text-slate-700 mt-2 bg-white px-1.5 py-0.5 border border-slate-200 rounded uppercase tracking-tighter">
-                                  {metric.id.split('-').pop()}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* List Table of GAs */}
-                    <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-                      <div className="bg-slate-50 border-b border-slate-200 p-5">
-                        <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight">Outcome Assessment Analysis Table</h4>
-                      </div>
-                      
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs text-slate-700 border-collapse">
-                          <thead>
-                            <tr className="bg-slate-100 text-slate-500 font-bold border-b border-slate-200 uppercase text-[9.5px] tracking-wider">
-                              <th className="px-6 py-3 w-28">GA Code</th>
-                              <th className="px-6 py-3">Attribute Description Specifications</th>
-                              <th className="px-6 py-3 text-center w-32">Total Cohort</th>
-                              <th className="px-6 py-3 text-center w-32">Passed (&gt;=50)</th>
-                              <th className="px-6 py-3 text-center w-32">Failed (&lt;50)</th>
-                              <th className="px-6 py-3 text-right w-36">Attainment %</th>
-                              <th className="px-6 py-3 text-center w-36">Compliance Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-150">
-                            {reportMetrics.gaMetrics.length === 0 && (
-                              <tr>
-                                <td colSpan={7} className="px-6 py-8 text-center text-xs font-semibold text-slate-500">
-                                  No Graduate Attributes are configured for this department/program yet. Add them before generating this report.
-                                </td>
-                              </tr>
-                            )}
-                            {reportMetrics.gaMetrics.map(metric => {
-                              const isAssessed = metric.totalCount > 0;
-                              return (
-                                <tr key={metric.id} className="hover:bg-slate-50/50 transition-colors font-semibold">
-                                  <td className="px-6 py-3.5 font-mono font-black text-indigo-700 text-xs">
-                                    {metric.id}
-                                  </td>
-                                  <td className="px-6 py-3.5">
-                                    <div className="font-bold text-slate-900">{metric.name}</div>
-                                    <div className="text-[10px] text-slate-400 font-normal mt-0.5">{metric.description || 'Washington Accord attribute compliance measure.'}</div>
-                                  </td>
-                                  <td className="px-6 py-3.5 text-center font-mono text-slate-600">
-                                    {metric.totalCount} Students
-                                  </td>
-                                  <td className="px-6 py-3.5 text-center font-mono text-blue-600 font-bold">
-                                    {isAssessed ? metric.passedCount : '—'}
-                                  </td>
-                                  <td className="px-6 py-3.5 text-center font-mono text-rose-500">
-                                    {isAssessed ? metric.failedCount : '—'}
-                                  </td>
-                                  <td className="px-6 py-3.5 text-right font-mono font-black text-slate-900 text-sm">
-                                    {isAssessed ? `${metric.percentage}%` : '—'}
-                                  </td>
-                                  <td className="px-6 py-3.5 text-center">
-                                    <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-black border uppercase tracking-wider ${
-                                      !isAssessed
-                                        ? 'bg-slate-50 text-slate-400 border-slate-200'
-                                        : metric.percentage >= 80
-                                        ? 'bg-blue-50 text-blue-700 border-blue-100'
-                                        : metric.percentage >= 65
-                                        ? 'bg-teal-50 text-teal-700 border-teal-100'
-                                        : metric.percentage >= 50
-                                        ? 'bg-amber-50 text-amber-700 border-amber-100'
-                                        : 'bg-rose-50 text-rose-700 border-rose-100'
-                                    }`}>
-                                      {!isAssessed ? 'No Data' : metric.percentage >= 80 ? 'Excellent' : metric.percentage >= 65 ? 'Good' : metric.percentage >= 50 ? 'Satisfactory' : 'Needs Support'}
-                                    </span>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ----------------- MODULE VIEW 6: SEMESTER-WISE GA ATTAINMENT (NEW TAB) ----------------- */}
-            {activeModule === 'semester_reports' && (
-              <div className="space-y-6 max-w-7xl mx-auto animate-in duration-200 fade-in-25">
-                {/* Header Summary Card */}
-                <div className="bg-gradient-to-br from-[#1e1b4b] to-[#312e81] rounded-3xl p-6 text-white shadow-md relative overflow-hidden">
-                  <div className="absolute right-0 top-0 bottom-0 opacity-10 select-none pointer-events-none flex items-center pr-10">
-                    <Activity className="w-48 h-48 text-white" />
-                  </div>
-                  <div className="relative z-10 space-y-2">
-                    <span className="text-[10px] font-mono font-bold tracking-widest text-indigo-300 bg-indigo-500/20 border border-indigo-400/30 px-3 py-1 rounded-full uppercase">
-                      Curriculum Analytics Matrix (V2)
-                    </span>
-                    <h3 className="text-xl font-black text-white">Semester-Wise Graduate Attribute (GA) Attainment</h3>
-                    <p className="text-xs text-indigo-200 max-w-xl font-medium leading-relaxed">
-                      A visual, curriculum-mapped analysis tracing student performance in key Graduate Attributes across academic semesters. This data is extracted in real-time from course plans and mapped assessment questions.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Filter / Focus Row */}
-                <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
-                  <div className="flex flex-col gap-1 shrink-0 w-full sm:max-w-xs">
-                    <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">GA Focus Filter</label>
-                    <select
-                      value={selectedSemesterGaFocus}
-                      onChange={(e) => setSelectedSemesterGaFocus(e.target.value)}
-                      className="w-full p-2.5 text-xs bg-slate-50 border border-slate-250 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-slate-850 font-bold"
-                    >
-                      <option value="all">Show All GAs (Grouped View)</option>
-                      {uniqueGAs.map((ga: any) => (
-                        <option key={ga.id} value={ga.id}>
-                          {ga.id}: {ga.title}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  
-                  <div className="text-slate-500 font-bold text-xs font-sans">
-                    Active Program: <span className="text-indigo-905 font-black font-mono uppercase bg-indigo-50 border border-indigo-150 px-2.5 py-1 rounded-md">
-                      {data?.programs.find(p => p.id === activeProgramId)?.code || activeProgramId.toUpperCase()}
-                    </span>
-                  </div>
-                </div>
-
-                {loadingSemesterReport ? (
-                  <div className="bg-white border border-slate-200 rounded-3xl p-16 text-center space-y-4 shadow-xs">
-                    <Loader2 className="w-10 h-10 text-indigo-600 animate-spin mx-auto" />
-                    <p className="text-xs text-slate-500 font-bold tracking-wide">
-                      Extracting curriculum-mapped assessment metrics... Please wait.
-                    </p>
-                  </div>
-                ) : semesterReportError ? (
-                  <div className="bg-white border border-slate-200 rounded-3xl p-12 text-center space-y-4 shadow-xs">
-                    <AlertCircle className="w-12 h-12 text-rose-500 mx-auto animate-bounce" />
-                    <h4 className="text-sm font-black text-slate-800">Failed to Load Semester Analytics</h4>
-                    <p className="text-xs text-slate-500 max-w-md mx-auto">
-                      {semesterReportError}
-                    </p>
-                  </div>
-                ) : !semesterReportData || !semesterReportData.semesters || semesterReportData.semesters.length === 0 ? (
-                  <div className="bg-white border border-slate-250 rounded-3xl p-16 text-center space-y-5 shadow-xs max-w-2xl mx-auto">
-                    <GraduationCap className="w-16 h-16 text-indigo-300/60 mx-auto" />
-                    <h3 className="font-serif font-black text-slate-800 text-lg">No Semester Plan Configured</h3>
-                    <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                      Department administrators have not yet configured the academic curriculum or semester plans for program <strong className="text-indigo-950 uppercase font-bold">{activeProgramId}</strong>. Once configured in the Semester Plan screen, analytics will generate automatically.
-                    </p>
-                    <div className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-950 bg-indigo-50 border border-indigo-100/60 px-4 py-2 rounded-xl">
-                      <span>💡 Please configure semester mappings in the Semester Plan screen first</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {/* Visual Bar Chart Card */}
-                    <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
-                      <div>
-                        <h4 className="text-sm font-black text-slate-800 flex items-center gap-2">
-                          <Activity className="w-4 h-4 text-indigo-600" />
-                          {selectedSemesterGaFocus === 'all' 
-                            ? 'Program-Wide Graduate Attribute (GA) Attainment Distribution' 
-                            : `Attainment Progress Trend for ${selectedSemesterGaFocus}`}
-                        </h4>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {selectedSemesterGaFocus === 'all'
-                            ? "Displays students' overall average performance in each Graduate Attribute (GA) combined across all curriculum semesters."
-                            : `Displays average student performance for Graduate Attribute ${selectedSemesterGaFocus} across all combined curriculum semesters.`}
-                        </p>
-                      </div>
-
-                      {/* The Bar graph itself */}
-                      <div className="bg-slate-50/50 border border-slate-200 rounded-2xl p-6">
-                        <div className="h-72 flex items-end gap-6 md:gap-10 border-b border-slate-300 pb-3 w-full relative">
-                          
-                          {/* Y-axis labels */}
-                          <div className="absolute left-0 right-0 top-0 bottom-0 flex flex-col justify-between pointer-events-none text-[8.5px] font-mono text-slate-300 font-bold z-0">
-                            <div className="border-b border-slate-200/60 pb-0.5 w-full text-left">100% Attainment</div>
-                            <div className="border-b border-slate-200/60 pb-0.5 w-full text-left">75%</div>
-                            <div className="border-b border-slate-200/60 pb-0.5 w-full text-left">50% Threshold</div>
-                            <div className="border-b border-slate-200/60 pb-0.5 w-full text-left">25%</div>
-                            <div className="w-full text-left">0%</div>
-                          </div>
-
-                          {/* Render Bars for Combined GAs */}
-                          <div className="flex-1 flex items-end justify-center gap-4 md:gap-8 relative z-10 h-full w-full px-6">
-                            {combinedGAData
-                              ?.filter((ga: any) => selectedSemesterGaFocus === 'all' || ga.id === selectedSemesterGaFocus)
-                              ?.map((ga: any) => {
-                                const averageAttainment = ga.averageAttainment;
-                                const colors = getGAColor(ga.id);
-                                
-                                return (
-                                  <div key={ga.id} className="flex-1 max-w-[64px] flex flex-col items-center group relative">
-                                    
-                                    {/* Tooltip */}
-                                    <div className="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 text-white text-[10px] p-3 rounded-lg shadow-xl pointer-events-none w-56 font-sans z-40 text-left leading-normal">
-                                      <p className="font-extrabold text-indigo-300 uppercase font-mono text-[9px] mb-1">
-                                        Overall Program Attainment
-                                      </p>
-                                      <p className="font-black text-white text-xs mb-1">
-                                        {ga.id}: {ga.title}
-                                      </p>
-                                      <div className="border-t border-slate-700 my-1.5 pt-1.5 flex justify-between items-center">
-                                        <span className="font-bold text-[10px]">Average Attainment:</span>
-                                        <span className="font-black text-indigo-400 text-xs">{averageAttainment}%</span>
-                                      </div>
-                                      <div className="text-[9.5px] text-slate-400 font-medium">
-                                        Mapped Semesters: {ga.semestersCount}
-                                      </div>
-                                      <div className="text-[9.5px] text-slate-400 font-medium">
-                                        Contributing Courses: {ga.contributingCoursesCount}
-                                      </div>
-                                      <div className="mt-1 flex items-center gap-1.5">
-                                        <span className="text-[9.5px] text-slate-400 font-medium">Status:</span>
-                                        <span className={`px-1.5 py-0.2 rounded text-[8px] font-black uppercase ${
-                                          averageAttainment >= 50 ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                        }`}>
-                                          {averageAttainment >= 50 ? 'Passed' : 'Audit Required'}
-                                        </span>
-                                      </div>
-                                    </div>
-
-                                    {/* Bar Backing and Fill */}
-                                    <div className="w-full bg-slate-200/60 hover:bg-slate-200 rounded-t-md h-52 flex items-end overflow-hidden border border-slate-300/40 shadow-2xs hover:border-indigo-400/50 transition-colors">
-                                      <div 
-                                        style={{ height: `${averageAttainment}%` }}
-                                        className={`w-full rounded-t-sm transition-all duration-500 cursor-pointer ${colors.split(' ')[0]}`}
-                                      />
-                                    </div>
-
-                                    {/* GA label bottom of the bar */}
-                                    <span className="text-[10px] font-mono font-black text-slate-700 mt-2 uppercase">
-                                      {ga.id}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Attribute Legend */}
-                      <div className="flex flex-wrap gap-3.5 justify-center border-t border-slate-100 pt-4 select-none">
-                        {uniqueGAs.map((ga: any) => {
-                          const badgeColors = getGATextColors(ga.id);
-                          return (
-                            <div 
-                              key={ga.id} 
-                              onClick={() => setSelectedSemesterGaFocus(ga.id)}
-                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-bold cursor-pointer transition-all hover:scale-105 active:scale-95 ${
-                                selectedSemesterGaFocus === ga.id 
-                                  ? `${badgeColors.text} ${badgeColors.bg} border-indigo-500 shadow-xs ring-1 ring-indigo-500` 
-                                  : 'bg-white border-slate-250 text-slate-600 hover:border-slate-400'
-                              }`}
-                            >
-                              <span className={`w-2 h-2 rounded-full ${getGAColor(ga.id).split(' ')[0]}`}></span>
-                              <span className="font-mono">{ga.id}</span>
-                              <span className="text-slate-400 font-semibold truncate max-w-[140px]">{ga.title}</span>
-                            </div>
-                          );
-                        })}
-                        {selectedSemesterGaFocus !== 'all' && (
-                          <button
-                            onClick={() => setSelectedSemesterGaFocus('all')}
-                            className="text-[9.5px] font-black text-indigo-600 hover:text-indigo-800 transition-colors uppercase font-mono tracking-wider ml-2 underline"
-                          >
-                            Reset View
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Combined Program-Wide Graduate Attribute Attainment Details Card */}
-                    <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                      {/* Card Header */}
-                      <div className="bg-slate-50 border-b border-slate-250 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-mono font-black text-indigo-600 bg-indigo-50 border border-indigo-150 px-2.5 py-0.5 rounded-full uppercase">
-                            Combined Curriculum
-                          </span>
-                          <h4 className="text-sm font-black text-slate-800">
-                            Graduate Attributes (GA) Program-Wide Attainment Plan
-                          </h4>
-                        </div>
-                        <div className="text-xs text-slate-500 font-semibold">
-                          Showing average attainment over all mapped semesters
-                        </div>
-                      </div>
-
-                      {/* Attributes List */}
-                      <div className="divide-y divide-slate-150">
-                        {combinedGAData
-                          ?.filter((ga: any) => selectedSemesterGaFocus === 'all' || ga.id === selectedSemesterGaFocus)
-                          ?.map((ga: any) => {
-                            const isPassed = ga.averageAttainment >= 50;
-                            const badgeStyle = getGATextColors(ga.id);
-
-                            return (
-                              <div key={ga.id} className="p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors">
-                                <div className="flex items-start gap-3.5 max-w-xl">
-                                  <span className={`px-2.5 py-1 rounded-lg border font-mono font-black text-[11px] shrink-0 tracking-tight ${badgeStyle.text} ${badgeStyle.bg} ${badgeStyle.border}`}>
-                                    {ga.id}
-                                  </span>
-                                  <div className="space-y-0.5">
-                                    <h5 className="text-xs font-extrabold text-slate-800 leading-snug">
-                                      {ga.title}
-                                    </h5>
-                                    <p className="text-[10.5px] text-slate-400 font-medium">
-                                      Curriculum analysis for attribute compliance over {ga.contributingCoursesCount} mapped course(s) across {ga.semestersCount} semester(s).
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-6 w-full md:w-auto shrink-0 justify-between md:justify-end">
-                                  {/* Horizontal Progress Bar */}
-                                  <div className="flex items-center gap-2.5 w-48 sm:w-56 shrink-0">
-                                    <div className="w-full bg-slate-100 border border-slate-200 rounded-full h-2 overflow-hidden shadow-2xs">
-                                      <div 
-                                        style={{ width: `${ga.averageAttainment}%` }}
-                                        className={`h-full rounded-full transition-all duration-500 ${
-                                          isPassed ? 'bg-blue-500' : 'bg-rose-500'
-                                        }`}
-                                      />
-                                    </div>
-                                    <span className="text-xs font-mono font-black text-slate-800 tracking-tight w-10 text-right">
-                                      {ga.averageAttainment}%
-                                    </span>
-                                  </div>
-
-                                  {/* Status Badge */}
-                                  <span className={`px-3 py-1 rounded-full text-[9px] font-black border tracking-wider uppercase inline-block text-center w-28 ${
-                                    isPassed 
-                                      ? 'bg-blue-50 text-blue-800 border-blue-150 shadow-2xs' 
-                                      : 'bg-rose-50 text-rose-800 border-rose-150 shadow-2xs'
-                                  }`}>
-                                    {isPassed ? 'Passed' : 'Audit Required'}
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
               </>
             )}
 
@@ -3810,10 +1878,10 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                           className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[140px]"
                         >
                           <option value="">— Select Batch —</option>
-                          {Array.from(new Set(students.map((s: any) => {
-                            const m = String(s.regNo || '').match(/([a-zA-Z]{2}\d{2})/i);
-                            return m ? m[1].toUpperCase() : null;
-                          }).filter(Boolean))).sort().map(b => (
+                          {Array.from(new Set(students
+                            .filter((s: any) => !s.departmentId || !activeDeptId || String(s.departmentId).toLowerCase() === String(activeDeptId).toLowerCase())
+                            .map((s: any) => getRegNoBatch(s.regNo))
+                            .filter(Boolean))).sort().map(b => (
                             <option key={b as string} value={(b as string).toLowerCase()}>{b as string}</option>
                           ))}
                         </select>
@@ -3978,7 +2046,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
 
                 {/* Results */}
                 {moreReportData && !moreReportLoading && (
-                  <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
+                  <div className="qa-print-area bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
 
                     {/* Print button */}
                     <div className="flex items-center justify-between">
@@ -3988,7 +2056,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                       </h3>
                       <button
                         onClick={() => window.print()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all"
+                        className="print:hidden flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all"
                       >
                         <Printer className="w-3.5 h-3.5" /> Print
                       </button>
@@ -4001,16 +2069,16 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                           {moreReportData.programName && <span className="bg-indigo-100 text-indigo-800 font-bold px-3 py-1 rounded-full">{moreReportData.programName}</span>}
                           {moreReportData.batch && <span className="bg-violet-100 text-violet-800 font-bold px-3 py-1 rounded-full">Batch: {moreReportData.batch?.toUpperCase()}</span>}
                           {moreReportData.studentCount != null && <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{moreReportData.studentCount} Students</span>}
-                          <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">Threshold: {moreReportData.attainmentThreshold ?? 50}%</span>
+                          <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">Threshold: {reportThreshold(moreReportData)}%</span>
                         </div>
                         {(() => {
-                          const gaPass = (ga: any) => ga.attainmentStatus ? (ga.attainmentStatus === 'Passed' || ga.attainmentStatus === 'Attained') : (ga.averageAttainment ?? 0) >= 50;
+                          const gaPass = (ga: any) => ga.attainmentStatus ? (ga.attainmentStatus === 'Passed' || ga.attainmentStatus === 'Attained') : (ga.averageAttainment ?? 0) >= reportThreshold(moreReportData);
                           const passed = moreReportData.attributes.filter(gaPass).length;
                           return (
                             <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
                               <ChartCard title="Attainment by Graduate Attribute" subtitle="Average attainment of each GA against the threshold">
                                 <HBarChart
-                                  threshold={moreReportData.attainmentThreshold ?? 50}
+                                  threshold={reportThreshold(moreReportData)}
                                   passLabel="Passed" failLabel="Audit Required"
                                   items={moreReportData.attributes.map((ga: any) => ({ label: String(ga.id), detail: ga.title, value: ga.averageAttainment ?? 0, pass: gaPass(ga) }))}
                                 />
@@ -4042,14 +2110,14 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                                 <td className="px-3 py-2 text-center">
                                   <div className="flex items-center justify-center gap-2">
                                     <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                                      <div className={`h-full rounded-full ${(ga.averageAttainment ?? 0) >= 50 ? 'bg-green-500' : 'bg-red-400'}`} style={{ width: `${Math.min(100, ga.averageAttainment ?? 0)}%` }} />
+                                      <div className={`h-full rounded-full ${(ga.averageAttainment ?? 0) >= reportThreshold(moreReportData) ? 'bg-green-500' : 'bg-red-400'}`} style={{ width: `${Math.min(100, ga.averageAttainment ?? 0)}%` }} />
                                     </div>
                                     <span className="font-bold text-slate-800">{(ga.averageAttainment ?? 0).toFixed(1)}%</span>
                                   </div>
                                 </td>
                                 <td className="px-3 py-2 text-center">
                                   <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${ga.attainmentStatus === 'Passed' || ga.attainmentStatus === 'Attained' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                    {ga.attainmentStatus ?? (ga.averageAttainment >= 50 ? 'Passed' : 'Audit Required')}
+                                    {ga.attainmentStatus ?? ((ga.averageAttainment ?? 0) >= reportThreshold(moreReportData) ? 'Passed' : 'Audit Required')}
                                   </span>
                                 </td>
                                 <td className="px-3 py-2 text-center text-slate-500">{ga.contributingCoursesCount ?? ga.assessedCount ?? '—'}</td>
@@ -4099,8 +2167,8 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                                     <td className="px-3 py-2 text-slate-700">{ga.title}</td>
                                     <td className="px-3 py-2 text-center font-bold">{(ga.averageAttainment ?? 0).toFixed(1)}%</td>
                                     <td className="px-3 py-2 text-center">
-                                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${(ga.averageAttainment ?? 0) >= 50 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                        {(ga.averageAttainment ?? 0) >= 50 ? 'Passed' : 'Audit Required'}
+                                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${(ga.averageAttainment ?? 0) >= reportThreshold(moreReportData) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {(ga.averageAttainment ?? 0) >= reportThreshold(moreReportData) ? 'Passed' : 'Audit Required'}
                                       </span>
                                     </td>
                                   </tr>
@@ -4118,18 +2186,18 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                         <div className="flex gap-3 flex-wrap text-xs">
                           <span className="bg-blue-100 text-blue-800 font-bold px-3 py-1 rounded-full">{moreReportData.courseCode} — {moreReportData.courseTitle}</span>
                           {moreReportData.classSize != null && <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{moreReportData.classSize} Students</span>}
-                          <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">Threshold: {moreReportData.attainmentThreshold ?? 50}%</span>
+                          <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">Threshold: {reportThreshold(moreReportData)}%</span>
                         </div>
                         {(() => {
                           const clos: any[] = moreReportData.clos;
-                          const passed = clos.filter(c => (c.attainmentPercentage ?? 0) >= 50).length;
+                          const passed = clos.filter(c => cloPct(c) >= reportThreshold(moreReportData)).length;
                           return (
                             <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
                               <ChartCard title="Attainment by CLO" subtitle="Percentage of students attaining each CLO">
                                 <HBarChart
-                                  threshold={moreReportData.attainmentThreshold ?? 50}
+                                  threshold={reportThreshold(moreReportData)}
                                   passLabel="Passed" failLabel="Needs Work"
-                                  items={clos.map(c => ({ label: String(c.code), detail: c.description, value: c.attainmentPercentage ?? 0, pass: (c.attainmentPercentage ?? 0) >= 50, extra: [`Mapped GA: ${c.mappedGA || '—'}`, `Passed: ${c.passedCount ?? '—'} / ${c.totalCount ?? '—'}`] }))}
+                                  items={clos.map(c => ({ label: String(c.code), detail: c.description, value: cloPct(c), pass: cloPct(c) >= reportThreshold(moreReportData), extra: [`Mapped GA: ${c.mappedGA || '—'}`, `Passed: ${c.passedCount ?? '—'} / ${c.totalCount ?? '—'}`] }))}
                                 />
                               </ChartCard>
                               <ChartCard title="CLO status" subtitle="Number of CLOs by status">
@@ -4160,11 +2228,11 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                                 <td className="px-3 py-2 text-center">
                                   <span className="bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full text-[10px]">{clo.mappedGA || '—'}</span>
                                 </td>
-                                <td className="px-3 py-2 text-center font-bold">{(clo.attainmentPercentage ?? 0).toFixed(1)}%</td>
+                                <td className="px-3 py-2 text-center font-bold">{cloPct(clo).toFixed(1)}%</td>
                                 <td className="px-3 py-2 text-center text-slate-500">{clo.passedCount ?? '—'} / {clo.totalCount ?? '—'}</td>
                                 <td className="px-3 py-2 text-center">
-                                  <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${(clo.attainmentPercentage ?? 0) >= 50 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                    {(clo.attainmentPercentage ?? 0) >= 50 ? 'Passed' : 'Needs Work'}
+                                  <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${cloPct(clo) >= reportThreshold(moreReportData) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                    {cloPct(clo) >= reportThreshold(moreReportData) ? 'Passed' : 'Needs Work'}
                                   </span>
                                 </td>
                               </tr>
@@ -4184,14 +2252,15 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                         {(() => {
                           const courses: any[] = moreReportData.courses;
                           const allClos = courses.flatMap(c => c.clos || []);
-                          const passed = allClos.filter((c: any) => (c.attainmentPercentage ?? 0) >= 50).length;
-                          const avg = (c: any) => (c.clos || []).length ? (c.clos || []).reduce((a: number, x: any) => a + Number(x.attainmentPercentage ?? 0), 0) / (c.clos || []).length : null;
+                          const passed = allClos.filter((c: any) => cloPct(c) >= reportThreshold(moreReportData)).length;
+                          const avg = (c: any) => (c.clos || []).length ? (c.clos || []).reduce((a: number, x: any) => a + cloPct(x), 0) / (c.clos || []).length : null;
                           return (
                             <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
                               <ChartCard title="Average CLO attainment by course" subtitle="Mean of each course's CLO attainment">
                                 <HBarChart
-                                  passLabel="At / above 50%" failLabel="Below 50%"
-                                  items={courses.map(c => { const v = avg(c); return { label: String(c.courseCode), detail: c.courseTitle, value: v, pass: v != null && v >= 50, extra: [`${(c.clos || []).length} CLOs`] }; })}
+                                  threshold={reportThreshold(moreReportData)}
+                                  passLabel={`At / above ${reportThreshold(moreReportData)}%`} failLabel={`Below ${reportThreshold(moreReportData)}%`}
+                                  items={courses.map(c => { const v = avg(c); return { label: String(c.courseCode), detail: c.courseTitle, value: v, pass: v != null && v >= reportThreshold(moreReportData), extra: [`${(c.clos || []).length} CLOs`] }; })}
                                 />
                               </ChartCard>
                               <ChartCard title="CLO status across courses" subtitle="All CLOs in this report">
@@ -4225,10 +2294,10 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                                     <td className="px-3 py-2 font-bold text-sky-700">{clo.code}</td>
                                     <td className="px-3 py-2 text-slate-600">{clo.description}</td>
                                     <td className="px-3 py-2 text-center"><span className="bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full text-[10px]">{clo.mappedGA || '—'}</span></td>
-                                    <td className="px-3 py-2 text-center font-bold">{(clo.attainmentPercentage ?? 0).toFixed(1)}%</td>
+                                    <td className="px-3 py-2 text-center font-bold">{cloPct(clo).toFixed(1)}%</td>
                                     <td className="px-3 py-2 text-center">
-                                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${(clo.attainmentPercentage ?? 0) >= 50 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                        {(clo.attainmentPercentage ?? 0) >= 50 ? 'Passed' : 'Audit Required'}
+                                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${cloPct(clo) >= reportThreshold(moreReportData) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {cloPct(clo) >= reportThreshold(moreReportData) ? 'Passed' : 'Audit Required'}
                                       </span>
                                     </td>
                                   </tr>
@@ -4313,7 +2382,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                       <div className="space-y-3">
                         <div className="flex gap-3 flex-wrap text-xs">
                           <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">{moreReportData.atRiskCount ?? moreReportData.students.length} At-Risk Students</span>
-                          <span className="text-[10px] text-slate-400">Students failing 2+ CLOs below {moreReportData.threshold ?? 50}%</span>
+                          <span className="text-[10px] text-slate-400">Students failing 2+ CLOs below {reportThreshold(moreReportData)}%</span>
                         </div>
                         {moreReportData.students.length > 0 && (() => {
                           const students: any[] = moreReportData.students;
@@ -4428,7 +2497,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                     {/* Instructor Performance */}
                     {moreReportType === 'instructor_performance' && moreReportData.instructors && (
                       <div className="space-y-3">
-                        <p className="text-xs text-slate-500">Instructors with courses below the {moreReportData.threshold ?? 50}% attainment threshold.</p>
+                        <p className="text-xs text-slate-500">Instructors with courses below the {reportThreshold(moreReportData)}% attainment threshold.</p>
                         {moreReportData.instructors.length > 0 && (() => {
                           const insts: any[] = moreReportData.instructors;
                           const allCourses = insts.flatMap(i => i.courses || []);

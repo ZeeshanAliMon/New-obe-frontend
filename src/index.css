@@ -28,3 +28,32 @@
   }
 }
 
+
+/* QA Reports: "Print" prints only the report results, not the header,
+   navigation or filters. Everything that neither contains nor sits inside
+   .qa-print-area is hidden while printing. Pages without it print normally. */
+@media print {
+  body:has(.qa-print-area) :not(:has(.qa-print-area)):not(.qa-print-area):not(.qa-print-area *) {
+    display: none !important;
+  }
+  body:has(.qa-print-area) :has(.qa-print-area) {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: white !important;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+  .qa-print-area {
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+  .qa-print-area .break-inside-avoid,
+  .qa-print-area tr {
+    break-inside: avoid;
+  }
+}

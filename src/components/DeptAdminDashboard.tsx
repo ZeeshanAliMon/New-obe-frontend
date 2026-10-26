@@ -214,7 +214,7 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     return departments.find(d => d.id === activeDeptId);
   }, [departments, activeDeptId]);
 
-  const [activeTab, setActiveTab] = useState<'semester-plans' | 'courses' | 'teachers' | 'teacher-assignments' | 'student-enrollment' | 'attainment-reports'>('semester-plans');
+  const [activeTab, setActiveTab] = useState<'semester-plans' | 'courses' | 'teachers' | 'teacher-assignments' | 'student-enrollment'>('semester-plans');
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -229,28 +229,6 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     isDanger?: boolean;
     onConfirm: () => void | Promise<void>;
   } | null>(null);
-
-  // Tab 6: Reports State
-  const [selectedReportProg, setSelectedReportProg] = useState<string>('');
-  const [selectedReportCourseCode, setSelectedReportCourseCode] = useState<string>('');
-  const [programGAReport, setProgramGAReport] = useState<any>(null);
-  const [courseAttainmentReport, setCourseAttainmentReport] = useState<any>(null);
-  const [loadingReport, setLoadingReport] = useState<boolean>(false);
-
-  // New 6 reports sub-tab states
-  const [subReportTab, setSubReportTab] = useState<'legacy' | 'co-summary' | 'po-attainment' | 'gap-analysis' | 'at-risk' | 'instructor-performance' | 'cohort-comparison'>('legacy');
-  const [coSummaryReport, setCoSummaryReport] = useState<any>(null);
-  const [poAttainmentReport, setPoAttainmentReport] = useState<any>(null);
-  const [gapAnalysisReport, setGapAnalysisReport] = useState<any>(null);
-  const [atRiskReport, setAtRiskReport] = useState<any>(null);
-  const [instructorPerformanceReport, setInstructorPerformanceReport] = useState<any>(null);
-  const [cohortComparisonReport, setCohortComparisonReport] = useState<any>(null);
-
-  // Filters for new reports
-  const [coSummarySemester, setCoSummarySemester] = useState<string>('Fall 2025');
-  const [coSummaryYear, setCoSummaryYear] = useState<string>('2025');
-  const [atRiskSemester, setAtRiskSemester] = useState<string>('Fall 2025');
-  const [cohortGaId, setCohortGaId] = useState<string>('GA-1');
 
   // Tab 1: Semester Plans Edit State
   const [selectedPlanProg, setSelectedPlanProg] = useState<string>('');
@@ -284,7 +262,6 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
 
   useEffect(() => {
     if (programs.length > 0) {
-      setSelectedReportProg(prev => prev || String(programs[0].id));
       setSelectedPlanProg(prev => prev || String(programs[0].id));
       
       const deptProgs = programs.filter(p => String(p.departmentId).toLowerCase() === String(courseDept).toLowerCase());
@@ -373,98 +350,6 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     "7th": true,
     "8th": true
   });
-
-  // Tab 6 Reports computed list
-  const reportCourses = useMemo(() => {
-    return courses.filter(c => c.departmentId === activeDeptId && (!selectedReportProg || c.programId === selectedReportProg));
-  }, [courses, activeDeptId, selectedReportProg]);
-
-  useEffect(() => {
-    if (reportCourses.length > 0) {
-      const codeExists = reportCourses.some(c => c.code === selectedReportCourseCode);
-      if (!codeExists) {
-        setSelectedReportCourseCode(reportCourses[0].code);
-      }
-    } else {
-      setSelectedReportCourseCode('');
-    }
-  }, [reportCourses, selectedReportCourseCode]);
-
-  // Fetch New Reports
-  useEffect(() => {
-    if (activeTab !== 'attainment-reports') return;
-
-    const fetchNewReports = async () => {
-      setLoadingReport(true);
-      try {
-        if (subReportTab === 'co-summary' && selectedReportProg) {
-          const data = await apiService.getCOAttainmentSummary(selectedReportProg, coSummarySemester, coSummaryYear);
-          setCoSummaryReport(data);
-        } else if (subReportTab === 'po-attainment' && selectedReportProg) {
-          const data = await apiService.getPOAttainment(selectedReportProg);
-          setPoAttainmentReport(data);
-        } else if (subReportTab === 'gap-analysis' && selectedReportProg) {
-          const data = await apiService.getGapAnalysis(selectedReportProg);
-          setGapAnalysisReport(data);
-        } else if (subReportTab === 'at-risk' && selectedReportProg) {
-          const data = await apiService.getAtRiskStudents(selectedReportProg, atRiskSemester);
-          setAtRiskReport(data);
-        } else if (subReportTab === 'instructor-performance') {
-          const data = await apiService.getInstructorPerformance(activeDeptId);
-          setInstructorPerformanceReport(data);
-        } else if (subReportTab === 'cohort-comparison' && selectedReportProg) {
-          const data = await apiService.getCohortComparison(selectedReportProg, cohortGaId);
-          setCohortComparisonReport(data);
-        }
-      } catch (err) {
-        console.warn("Failed to fetch sub report:", err);
-      } finally {
-        setLoadingReport(false);
-      }
-    };
-
-    fetchNewReports();
-  }, [subReportTab, selectedReportProg, coSummarySemester, coSummaryYear, atRiskSemester, cohortGaId, activeTab, activeDeptId]);
-
-  // Fetch Program GA Attainment
-  useEffect(() => {
-    if (activeTab !== 'attainment-reports' || !selectedReportProg) return;
-
-    const fetchProgramGAReport = async () => {
-      setLoadingReport(true);
-      try {
-        const report = await apiService.getProgramGAAttainment(selectedReportProg);
-        setProgramGAReport(report);
-      } catch (err) {
-        console.warn("Failed to fetch program GA report:", err);
-        setProgramGAReport(null);
-      } finally {
-        setLoadingReport(false);
-      }
-    };
-
-    fetchProgramGAReport();
-  }, [selectedReportProg, activeTab]);
-
-  // Fetch Course Attainment
-  useEffect(() => {
-    if (activeTab !== 'attainment-reports' || !selectedReportCourseCode || !selectedReportProg) {
-      setCourseAttainmentReport(null);
-      return;
-    }
-
-    const fetchCourseReport = async () => {
-      try {
-        const report = await apiService.getCourseAttainment(selectedReportCourseCode, selectedReportProg);
-        setCourseAttainmentReport(report);
-      } catch (err) {
-        console.warn("Failed to fetch course attainment report:", err);
-        setCourseAttainmentReport(null);
-      }
-    };
-
-    fetchCourseReport();
-  }, [selectedReportCourseCode, selectedReportProg, activeTab]);
 
   // Load all initial data and set fallback local storage structures
   useEffect(() => {
