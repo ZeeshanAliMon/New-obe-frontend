@@ -2787,13 +2787,23 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
     }
   }, [selectedCourse, activeTab]);
 
-  // Load input fields when the selected index or category length updates
+  // Keep the "Active component editor" inputs in step with the selected row of
+  // the CURRENT course. This used to run only when the row index or the number
+  // of categories changed, so after switching courses the inputs kept showing
+  // the previous course's values. Now: whenever the selected row's values differ
+  // from what the inputs show (course switch, Cancel), the inputs are refreshed.
+  // While typing, the handlers keep both equal, so typing is not interrupted.
   useEffect(() => {
-    if (tempCategories.length > 0 && tempCategories[selectedWeightIndex]) {
-      setEditWeightPercent(tempCategories[selectedWeightIndex].percentage.toString());
-      setEditWeightUnits(tempCategories[selectedWeightIndex].units.toString());
+    const cat = tempCategories[selectedWeightIndex];
+    if (!cat) return;
+    if ((parseFloat(editWeightPercent) || 0) !== (Number(cat.percentage) || 0)) {
+      setEditWeightPercent(String(cat.percentage));
     }
-  }, [selectedWeightIndex, tempCategories.length]);
+    if ((parseInt(editWeightUnits, 10) || 0) !== (Number(cat.units) || 0)) {
+      setEditWeightUnits(String(cat.units));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWeightIndex, tempCategories]);
 
   useEffect(() => {
     if (saveStatus !== 'success') {
