@@ -97,10 +97,11 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
   const [isEditingPoInline, setIsEditingPoInline] = useState<boolean>(false);
 
   // More Reports state
-  const [moreReportType, setMoreReportType] = useState<'ga_program' | 'ga_batch' | 'ga_semester' | 'clo_attainment' | 'po_attainment' | 'co_summary' | 'at_risk' | 'gap_analysis' | 'instructor_performance' | 'cohort_comparison'>('ga_program');
+  const [moreReportType, setMoreReportType] = useState<'ga_program' | 'ga_batch' | 'ga_semester' | 'ga_course' | 'clo_attainment' | 'po_attainment' | 'co_summary' | 'at_risk' | 'gap_analysis' | 'instructor_performance' | 'cohort_comparison'>('ga_program');
   const [moreReportProgramId, setMoreReportProgramId] = useState<string>('');
   const [moreReportBatch, setMoreReportBatch] = useState<string>('');
   const [moreReportSemester, setMoreReportSemester] = useState<string>('');
+  const [gaCourseOfferingIdx, setGaCourseOfferingIdx] = useState<number>(0);
   // Pass mark for the Reports page: use the threshold the report itself returns
   // (attainmentThreshold / threshold), falling back to the backend default of 50%.
   const reportThreshold = (d: any): number => {
@@ -1833,6 +1834,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                       { id: 'ga_program',            label: 'GA Attainment\nby Program',       icon: <Award className="w-5 h-5" />,          color: 'indigo' },
                       { id: 'ga_batch',              label: 'GA Attainment\nby Batch',          icon: <Users className="w-5 h-5" />,          color: 'violet' },
                       { id: 'ga_semester',           label: 'GA Attainment\nby Semester',       icon: <Layers className="w-5 h-5" />,         color: 'purple' },
+                      { id: 'ga_course',             label: 'GA Attainment\nby Course',         icon: <Users className="w-5 h-5" />,          color: 'indigo' },
                       { id: 'clo_attainment',        label: 'CLO Attainment\nby Course',        icon: <Target className="w-5 h-5" />,         color: 'blue' },
                       { id: 'co_summary',            label: 'CO Attainment\nSummary (HEC)',     icon: <FileText className="w-5 h-5" />,       color: 'sky' },
                       { id: 'po_attainment',         label: 'PO Attainment\n(HEC Compliance)',  icon: <BarChart2 className="w-5 h-5" />,      color: 'teal' },
@@ -1861,7 +1863,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                   <div className="flex flex-wrap gap-4 items-end">
 
                     {/* Program — needed for most reports */}
-                    {['ga_program','ga_semester','clo_attainment','co_summary','po_attainment','at_risk','gap_analysis','cohort_comparison'].includes(moreReportType) && (
+                    {['ga_program','ga_semester','ga_course','clo_attainment','co_summary','po_attainment','at_risk','gap_analysis','cohort_comparison'].includes(moreReportType) && (
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Programme</label>
                         <select
@@ -1910,6 +1912,27 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                           {['1st','2nd','3rd','4th','5th','6th','7th','8th'].map(s => (
                             <option key={s} value={s}>{s} Semester</option>
                           ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Course for "GA Attainment by Course" (courses of the chosen programme) */}
+                    {moreReportType === 'ga_course' && (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Course</label>
+                        <select
+                          value={moreReportCourseCode}
+                          onChange={e => { setMoreReportCourseCode(e.target.value); setMoreReportData(null); }}
+                          className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[220px]"
+                        >
+                          <option value="">— Select Course —</option>
+                          {(() => {
+                            const all = (data?.courses || []) as any[];
+                            const prog = String(moreReportProgramId || '').toLowerCase();
+                            const inProg = prog ? all.filter(c => String(c.programId || '').toLowerCase() === prog) : all;
+                            const list = (inProg.length ? inProg : all).slice().sort((a, b) => String(a.code).localeCompare(String(b.code)));
+                            return list.map((c: any) => <option key={c.id} value={c.code}>{c.code} — {c.title}</option>);
+                          })()}
                         </select>
                       </div>
                     )}
@@ -1992,6 +2015,12 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                           } else if (moreReportType === 'ga_semester') {
                             if (!moreReportProgramId) throw new Error('Please select a programme.');
                             result = await get(`/reports/program-ga-attainment-by-semester/?programId=${encodeURIComponent(moreReportProgramId)}`);
+                          } else if (moreReportType === 'ga_course') {
+                            if (!moreReportCourseCode) throw new Error('Please select a course.');
+                            const params = new URLSearchParams({ courseCode: moreReportCourseCode });
+                            if (moreReportProgramId) params.set('programId', moreReportProgramId);
+                            result = await get(`/reports/course-ga-students/?${params}`);
+                            setGaCourseOfferingIdx(0);
                           } else if (moreReportType === 'clo_attainment') {
                             if (!moreReportCourseCode) throw new Error('Please select a course.');
                             const params = new URLSearchParams({ courseCode: moreReportCourseCode });
@@ -2189,6 +2218,136 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                         ))}
                       </div>
                     )}
+
+                    {/* GA Attainment by Course (students) */}
+                    {moreReportType === 'ga_course' && Array.isArray(moreReportData.offerings) && (() => {
+                      const offs: any[] = moreReportData.offerings;
+                      if (offs.length === 0) {
+                        return <p className="text-xs text-slate-500">No students are enrolled in {moreReportData.courseCode} yet.</p>;
+                      }
+                      const off = offs[Math.min(gaCourseOfferingIdx, offs.length - 1)];
+                      const gas: any[] = off.gas || [];
+                      const counted = gas.filter(g => g.questionCount > 0);
+                      return (
+                        <div className="space-y-4">
+                          <div className="flex gap-2 flex-wrap items-center text-xs">
+                            <span className="bg-indigo-100 text-indigo-800 font-bold px-3 py-1 rounded-full">{moreReportData.courseCode} — {moreReportData.courseTitle}</span>
+                            <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{off.studentCount} Students</span>
+                            <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{off.questionCount} graded questions</span>
+                            <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">Question passed at ≥ {moreReportData.questionPassThreshold ?? 50}% · GA attained at ≥ {moreReportData.gaAttainmentThreshold ?? 50}%</span>
+                          </div>
+
+                          {offs.length > 1 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {offs.map((o, i) => (
+                                <button key={o.id} type="button" onClick={() => setGaCourseOfferingIdx(i)}
+                                  className={`px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer ${i === Math.min(gaCourseOfferingIdx, offs.length - 1) ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300'}`}>
+                                  {o.academicYear || 'No term'} · {o.instructor}{o.status === 'closed' ? ' (closed)' : ''}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          {off.unmappedQuestionCount > 0 && (
+                            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                              <span>{off.unmappedQuestionCount} of {off.questionCount} questions are mapped to a CLO that has no GA (or to no CLO), so they are not counted in any GA.</span>
+                            </div>
+                          )}
+
+                          <ChartCard title="Students who attained each GA" subtitle="Share of the class that passed at least half of the questions mapped (through their CLO) to the GA">
+                            {counted.length ? (
+                              <HBarChart
+                                threshold={50}
+                                passLabel="At least half of the class attained" failLabel="Less than half of the class attained"
+                                items={counted.map(g => ({
+                                  label: gaLabel(g.id), detail: g.title, value: g.percentStudentsAttained ?? 0,
+                                  extra: [`${g.studentsAttained} of ${g.studentCount} students`, `${g.questionCount} questions · ${(g.clos || []).join(', ')}`, `Average attainment ${g.averageAttainment ?? 0}%`],
+                                }))}
+                              />
+                            ) : <p className="text-[11px] text-slate-400">No questions of this course are mapped to a GA yet.</p>}
+                          </ChartCard>
+
+                          <table className="w-full border-collapse text-xs">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-200">
+                                <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">GA</th>
+                                <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Title</th>
+                                <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">CLOs</th>
+                                <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Questions</th>
+                                <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Students Attained</th>
+                                <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">% Attained</th>
+                                <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Avg Attainment</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {gas.map((g: any) => (
+                                <tr key={g.id} className="border-b border-slate-100 hover:bg-slate-50">
+                                  <td className="px-3 py-2 font-black text-indigo-700">{gaLabel(g.id)}</td>
+                                  <td className="px-3 py-2 text-slate-700">{g.title}</td>
+                                  <td className="px-3 py-2 text-center text-slate-500">{(g.clos || []).join(', ') || '—'}</td>
+                                  <td className="px-3 py-2 text-center font-bold">{g.questionCount}</td>
+                                  <td className="px-3 py-2 text-center">{g.questionCount ? `${g.studentsAttained} / ${g.studentCount}` : '—'}</td>
+                                  <td className="px-3 py-2 text-center">
+                                    {g.questionCount ? (
+                                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${(g.percentStudentsAttained ?? 0) >= 50 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {(g.percentStudentsAttained ?? 0).toFixed(1)}%
+                                      </span>
+                                    ) : <span className="text-[10px] text-slate-400">no questions</span>}
+                                  </td>
+                                  <td className="px-3 py-2 text-center font-bold">{g.questionCount ? `${(g.averageAttainment ?? 0).toFixed(1)}%` : '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+
+                          {counted.length > 0 && (
+                            <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                              <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
+                                <span className="text-xs font-black text-slate-700">Student GA attainment</span>
+                                <span className="text-[10px] text-slate-500">questions passed / questions for the GA</span>
+                              </div>
+                              <div className="max-h-[420px] overflow-auto">
+                                <table className="w-full text-xs">
+                                  <thead className="sticky top-0 bg-white shadow-sm">
+                                    <tr className="border-b border-slate-200">
+                                      <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Reg No</th>
+                                      <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Name</th>
+                                      {counted.map(g => <th key={g.id} className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">{gaLabel(g.id)}</th>)}
+                                      <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">GAs Attained</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(off.students || []).map((st: any) => {
+                                      const got = counted.filter(g => st.gas?.[g.id]?.attained).length;
+                                      return (
+                                        <tr key={st.regNo} className="border-b border-slate-50 hover:bg-slate-50">
+                                          <td className="px-3 py-1.5 font-mono font-bold text-slate-700">{st.regNo}</td>
+                                          <td className="px-3 py-1.5 text-slate-700">{st.name}</td>
+                                          {counted.map(g => {
+                                            const c = st.gas?.[g.id];
+                                            return (
+                                              <td key={g.id} className="px-3 py-1.5 text-center" title={c ? `${c.passed} of ${c.total} questions passed` : ''}>
+                                                {c ? (
+                                                  <span className={`inline-block min-w-[56px] px-2 py-0.5 rounded-full font-bold text-[10px] ${c.attained ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                    {c.attained ? '✓' : '✗'} {Math.round(c.percent)}%
+                                                  </span>
+                                                ) : '—'}
+                                              </td>
+                                            );
+                                          })}
+                                          <td className="px-3 py-1.5 text-center font-bold text-slate-700">{got} / {counted.length}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* CLO Attainment by Course */}
                     {moreReportType === 'clo_attainment' && moreReportData.clos && (
@@ -2605,7 +2764,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                     )}
 
                     {/* Fallback for unexpected shapes */}
-                    {!['attributes','semesters','clos','courses','pos','students','instructors','cohorts'].some(k => moreReportData[k]) && (
+                    {!['attributes','semesters','clos','courses','pos','students','instructors','cohorts','offerings'].some(k => moreReportData[k]) && (
                       <pre className="text-[10px] text-slate-500 bg-slate-50 rounded-2xl p-4 overflow-auto max-h-96 whitespace-pre-wrap">
                         {JSON.stringify(moreReportData, null, 2)}
                       </pre>
