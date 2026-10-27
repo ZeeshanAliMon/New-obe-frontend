@@ -110,6 +110,15 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
   // CLO attainment %: course-attainment sends `attainmentPercentage`,
   // co-attainment-summary sends `attainmentPercent`.
   const cloPct = (c: any): number => Number(c?.attainmentPercentage ?? c?.attainmentPercent ?? 0);
+  // Show program-scoped GA ids ("BSCS1", "BSAI3") as "GA1", "GA3" — the same
+  // label the Instructor and Student dashboards use (formatGACodeToStandard).
+  const gaNum = (id: any): number => { const m = String(id ?? '').match(/\d+/); return m ? parseInt(m[0], 10) : 9999; };
+  const byGa = (key: string) => (a: any, b: any) => gaNum(a?.[key]) - gaNum(b?.[key]);
+  const gaLabel = (id: any): string => {
+    const raw = String(id ?? '').trim();
+    const m = raw.match(/\d+/);
+    return m ? `GA${m[0]}` : (raw || '—');
+  };
   const [moreReportCourseCode, setMoreReportCourseCode] = useState<string>('');
   const [moreReportGaId, setMoreReportGaId] = useState<string>('');
   const [moreReportData, setMoreReportData] = useState<any>(null);
@@ -1950,7 +1959,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                         >
                           <option value="">All GAs</option>
                           {(data?.gas || []).filter((g: any) => !moreReportProgramId || g.programId === moreReportProgramId).map((g: any) => (
-                            <option key={g.id} value={g.id}>{g.id} — {g.name}</option>
+                            <option key={g.id} value={g.id}>{gaLabel(g.id)} — {g.name}</option>
                           ))}
                         </select>
                       </div>
@@ -2080,7 +2089,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                                 <HBarChart
                                   threshold={reportThreshold(moreReportData)}
                                   passLabel="Passed" failLabel="Audit Required"
-                                  items={moreReportData.attributes.map((ga: any) => ({ label: String(ga.id), detail: ga.title, value: ga.averageAttainment ?? 0, pass: gaPass(ga) }))}
+                                  items={[...moreReportData.attributes].sort(byGa('id')).map((ga: any) => ({ label: gaLabel(ga.id), detail: ga.title, value: ga.averageAttainment ?? 0, pass: gaPass(ga) }))}
                                 />
                               </ChartCard>
                               <ChartCard title="Status breakdown" subtitle="Number of GAs by status">
@@ -2103,9 +2112,9 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                             </tr>
                           </thead>
                           <tbody>
-                            {moreReportData.attributes.map((ga: any, i: number) => (
+                            {[...moreReportData.attributes].sort(byGa('id')).map((ga: any, i: number) => (
                               <tr key={ga.id || i} className="border-b border-slate-100 hover:bg-slate-50">
-                                <td className="px-3 py-2 font-black text-indigo-700">{ga.id}</td>
+                                <td className="px-3 py-2 font-black text-indigo-700">{gaLabel(ga.id)}</td>
                                 <td className="px-3 py-2 text-slate-700">{ga.title}</td>
                                 <td className="px-3 py-2 text-center">
                                   <div className="flex items-center justify-center gap-2">
@@ -2140,9 +2149,10 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                             const ga = (sem?.attributes || []).find((g: any) => String(g.id) === gaId);
                             return ga ? (ga.averageAttainment ?? 0) : null;
                           };
+                          gaIds.sort((a, b) => gaNum(a) - gaNum(b));
                           return gaIds.length > 0 && (
                             <ChartCard title="GA attainment heatmap" subtitle="Darker cells mean higher attainment. Each column is a semester.">
-                              <HeatmapChart rows={gaIds} cols={sems.map(x => String(x.semester))} value={lookup} rowLabel="GA" colLabel={c => `Sem ${c}`} />
+                              <HeatmapChart rows={gaIds.map(gaLabel)} cols={sems.map(x => String(x.semester))} value={(r, c) => lookup(gaIds[gaIds.map(gaLabel).indexOf(r)], c)} rowLabel="GA" colLabel={c => `Sem ${c}`} />
                             </ChartCard>
                           );
                         })()}
@@ -2161,9 +2171,9 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                                 </tr>
                               </thead>
                               <tbody>
-                                {(sem.attributes || []).map((ga: any, j: number) => (
+                                {[...(sem.attributes || [])].sort(byGa('id')).map((ga: any, j: number) => (
                                   <tr key={j} className="border-b border-slate-50 hover:bg-slate-50">
-                                    <td className="px-3 py-2 font-bold text-indigo-700">{ga.id}</td>
+                                    <td className="px-3 py-2 font-bold text-indigo-700">{gaLabel(ga.id)}</td>
                                     <td className="px-3 py-2 text-slate-700">{ga.title}</td>
                                     <td className="px-3 py-2 text-center font-bold">{(ga.averageAttainment ?? 0).toFixed(1)}%</td>
                                     <td className="px-3 py-2 text-center">
@@ -2197,7 +2207,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                                 <HBarChart
                                   threshold={reportThreshold(moreReportData)}
                                   passLabel="Passed" failLabel="Needs Work"
-                                  items={clos.map(c => ({ label: String(c.code), detail: c.description, value: cloPct(c), pass: cloPct(c) >= reportThreshold(moreReportData), extra: [`Mapped GA: ${c.mappedGA || '—'}`, `Passed: ${c.passedCount ?? '—'} / ${c.totalCount ?? '—'}`] }))}
+                                  items={clos.map(c => ({ label: String(c.code), detail: c.description, value: cloPct(c), pass: cloPct(c) >= reportThreshold(moreReportData), extra: [`Mapped GA: ${c.mappedGA ? gaLabel(c.mappedGA) : '—'}`, `Passed: ${c.passedCount ?? '—'} / ${c.totalCount ?? '—'}`] }))}
                                 />
                               </ChartCard>
                               <ChartCard title="CLO status" subtitle="Number of CLOs by status">
@@ -2226,7 +2236,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                                 <td className="px-3 py-2 font-black text-blue-700">{clo.code}</td>
                                 <td className="px-3 py-2 text-slate-600">{clo.description}</td>
                                 <td className="px-3 py-2 text-center">
-                                  <span className="bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full text-[10px]">{clo.mappedGA || '—'}</span>
+                                  <span className="bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full text-[10px]">{clo.mappedGA ? gaLabel(clo.mappedGA) : '—'}</span>
                                 </td>
                                 <td className="px-3 py-2 text-center font-bold">{cloPct(clo).toFixed(1)}%</td>
                                 <td className="px-3 py-2 text-center text-slate-500">{clo.passedCount ?? '—'} / {clo.totalCount ?? '—'}</td>
@@ -2293,7 +2303,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                                   <tr key={j} className="border-b border-slate-50 hover:bg-slate-50">
                                     <td className="px-3 py-2 font-bold text-sky-700">{clo.code}</td>
                                     <td className="px-3 py-2 text-slate-600">{clo.description}</td>
-                                    <td className="px-3 py-2 text-center"><span className="bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full text-[10px]">{clo.mappedGA || '—'}</span></td>
+                                    <td className="px-3 py-2 text-center"><span className="bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full text-[10px]">{clo.mappedGA ? gaLabel(clo.mappedGA) : '—'}</span></td>
                                     <td className="px-3 py-2 text-center font-bold">{cloPct(clo).toFixed(1)}%</td>
                                     <td className="px-3 py-2 text-center">
                                       <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${cloPct(clo) >= reportThreshold(moreReportData) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
@@ -2327,7 +2337,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                                 <HBarChart
                                   showThreshold={false}
                                   legend={[{ color: CHART.good, label: 'Met' }, { color: CHART.warning, label: 'Partially Met' }, { color: CHART.critical, label: 'Not Met' }]}
-                                  items={pos.map(p => ({ label: String(p.id), detail: p.text, value: p.attainmentPercent ?? 0, color: colorOf(p.status), status: p.status, extra: (p.contributingGAs || []).length ? [`GAs: ${(p.contributingGAs || []).map((g: any) => g.gaId).join(', ')}`] : [] }))}
+                                  items={pos.map(p => ({ label: String(p.id), detail: p.text, value: p.attainmentPercent ?? 0, color: colorOf(p.status), status: p.status, extra: (p.contributingGAs || []).length ? [`GAs: ${(p.contributingGAs || []).map((g: any) => gaLabel(g.gaId)).join(', ')}`] : [] }))}
                                 />
                               </ChartCard>
                               <ChartCard title="Compliance status" subtitle="Number of POs by status">
@@ -2365,7 +2375,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                                   <div className="flex flex-wrap gap-1">
                                     {(po.contributingGAs || []).map((ga: any, j: number) => (
                                       <span key={j} className="bg-indigo-50 text-indigo-700 font-bold text-[10px] px-2 py-0.5 rounded-full border border-indigo-200">
-                                        {ga.gaId} ({(ga.attainmentPercent ?? 0).toFixed(0)}%)
+                                        {gaLabel(ga.gaId)} ({(ga.attainmentPercent ?? 0).toFixed(0)}%)
                                       </span>
                                     ))}
                                   </div>
@@ -2439,7 +2449,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                       <div className="space-y-3">
                         <p className="text-xs text-slate-500">GAs with zero or low course coverage — indicates curriculum gaps requiring attention.</p>
                         {(() => {
-                          const atts: any[] = moreReportData.attributes;
+                          const atts: any[] = [...moreReportData.attributes].sort(byGa('gaId'));
                           const kind = (st: string) => st === 'No Coverage' ? 'none' : (st === 'Partial Coverage' || st === 'Mapped but No CLOs' || st === 'Low Attainment') ? 'partial' : 'ok';
                           const colorOf = (st: string) => ({ none: CHART.critical, partial: CHART.warning, ok: CHART.good } as any)[kind(st)];
                           return (
@@ -2447,7 +2457,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                               <ChartCard title="Course coverage by GA" subtitle="Number of mapped courses per GA. Bar colour shows coverage status.">
                                 <HBarChart showThreshold={false} unit="courses" max={0}
                                   legend={[{ color: CHART.good, label: 'Covered' }, { color: CHART.warning, label: 'Partial / Low' }, { color: CHART.critical, label: 'No Coverage' }]}
-                                  items={atts.map(g => ({ label: String(g.gaId), detail: g.gaName, value: g.mappedCoursesCount ?? 0, color: colorOf(g.status), status: g.status, extra: [`Active CLOs: ${g.activeCLOsCount ?? 0}`, `Avg attainment: ${g.avgAttainment != null ? Number(g.avgAttainment).toFixed(1) + '%' : '—'}`] }))}
+                                  items={atts.map(g => ({ label: gaLabel(g.gaId), detail: g.gaName, value: g.mappedCoursesCount ?? 0, color: colorOf(g.status), status: g.status, extra: [`Active CLOs: ${g.activeCLOsCount ?? 0}`, `Avg attainment: ${g.avgAttainment != null ? Number(g.avgAttainment).toFixed(1) + '%' : '—'}`] }))}
                                 />
                               </ChartCard>
                               <ChartCard title="Coverage status" subtitle="Number of GAs by status">
@@ -2472,9 +2482,9 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                             </tr>
                           </thead>
                           <tbody>
-                            {moreReportData.attributes.map((g: any, i: number) => (
+                            {[...moreReportData.attributes].sort(byGa('gaId')).map((g: any, i: number) => (
                               <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
-                                <td className="px-3 py-2 font-black text-orange-700">{g.gaId}</td>
+                                <td className="px-3 py-2 font-black text-orange-700">{gaLabel(g.gaId)}</td>
                                 <td className="px-3 py-2 text-slate-700">{g.gaName}</td>
                                 <td className="px-3 py-2 text-center font-bold">{g.mappedCoursesCount ?? 0}</td>
                                 <td className="px-3 py-2 text-center font-bold">{g.activeCLOsCount ?? 0}</td>
@@ -2561,15 +2571,15 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                     {/* Cohort Comparison */}
                     {moreReportType === 'cohort_comparison' && moreReportData.cohorts && (
                       <div className="space-y-3">
-                        <p className="text-xs text-slate-500">GA attainment across academic years / batches ({moreReportData.gaId || 'All GAs'}).</p>
+                        <p className="text-xs text-slate-500">GA attainment across academic years / batches ({moreReportData.gaId ? gaLabel(moreReportData.gaId) : 'All GAs'}).</p>
                         {moreReportData.cohorts.length > 0 && (() => {
                           const cohorts: any[] = moreReportData.cohorts;
-                          const gas: string[] = Array.from(new Set(cohorts.map(c => String(c.gaId))));
+                          const gas: string[] = Array.from(new Set(cohorts.map(c => String(c.gaId)))).sort((a, b) => gaNum(a) - gaNum(b));
                           const years: string[] = Array.from(new Set(cohorts.map(c => String(c.academicYear)))).sort();
                           const val = (ga: string, yr: string) => { const c = cohorts.find(x => String(x.gaId) === ga && String(x.academicYear) === yr); return c ? Number(c.attainmentPercent ?? 0) : null; };
                           return (
                             <ChartCard title="GA attainment by academic year" subtitle={years.length > 1 ? 'Each colour is an academic year; darker = more recent' : `Academic year ${years[0]}`}>
-                              <GroupedColumnChart categories={gas} series={years} value={val} threshold={moreReportData.threshold ?? undefined} />
+                              <GroupedColumnChart categories={gas.map(gaLabel)} series={years} value={(cat, yr) => val(gas[gas.map(gaLabel).indexOf(cat)], yr)} threshold={moreReportData.threshold ?? undefined} />
                             </ChartCard>
                           );
                         })()}
@@ -2585,7 +2595,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                             {moreReportData.cohorts.map((c: any, i: number) => (
                               <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
                                 <td className="px-3 py-2 font-bold text-green-700">{c.academicYear}</td>
-                                <td className="px-3 py-2 font-bold text-indigo-700">{c.gaId}</td>
+                                <td className="px-3 py-2 font-bold text-indigo-700">{gaLabel(c.gaId)}</td>
                                 <td className="px-3 py-2 text-center font-bold">{Number(c.attainmentPercent ?? 0).toFixed(1)}%</td>
 </tr>
                             ))}
