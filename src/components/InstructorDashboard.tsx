@@ -340,9 +340,11 @@ const getShortLabel = (catName: string, unitNo: number, totalUnits: number): str
   return prefix;
 };
 
-// Default weightage offered on "Set Weightage" for a course that has none yet
-// (every category at 0%). Only pre-fills the editor; nothing is saved until the
-// instructor presses "Ok". Courses that already have weightages are untouched.
+// Default weightage offered on "Set Weightage" for a course without a usable
+// weightage: nothing set (0%) or a total other than 100% (e.g. leftovers from old
+// demo data — this page itself can only save exactly 100%). Only pre-fills the
+// editor; nothing is saved until the instructor presses "Ok". A course whose
+// weightage adds up to 100% is shown exactly as saved.
 const DEFAULT_WEIGHTAGE: Record<string, { percentage: number; units: number }> = {
   'Assignments': { percentage: 10, units: 3 },
   'Quizzes':     { percentage: 10, units: 3 },
@@ -353,10 +355,12 @@ const DEFAULT_WEIGHTAGE: Record<string, { percentage: number; units: number }> =
 const withDefaultWeightage = (categories: MarksCategory[]): MarksCategory[] => {
   const copy: MarksCategory[] = JSON.parse(JSON.stringify(categories || []));
   const total = copy.reduce((sum, c) => sum + (Number(c.percentage) || 0), 0);
-  if (total > 0) return copy;
+  if (Math.abs(total - 100) < 0.01) return copy;
   const names = new Set(copy.map(c => c.name));
   if (!Object.keys(DEFAULT_WEIGHTAGE).every(n => names.has(n))) return copy;
-  return copy.map(c => (DEFAULT_WEIGHTAGE[c.name] ? { ...c, ...DEFAULT_WEIGHTAGE[c.name] } : c));
+  return copy.map(c => (DEFAULT_WEIGHTAGE[c.name]
+    ? { ...c, ...DEFAULT_WEIGHTAGE[c.name] }
+    : { ...c, percentage: 0, units: 0 }));
 };
 
 const normalizeCourse = (course: InstructorCourse): InstructorCourse => {
