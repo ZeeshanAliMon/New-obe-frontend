@@ -340,6 +340,25 @@ const getShortLabel = (catName: string, unitNo: number, totalUnits: number): str
   return prefix;
 };
 
+// Default weightage offered on "Set Weightage" for a course that has none yet
+// (every category at 0%). Only pre-fills the editor; nothing is saved until the
+// instructor presses "Ok". Courses that already have weightages are untouched.
+const DEFAULT_WEIGHTAGE: Record<string, { percentage: number; units: number }> = {
+  'Assignments': { percentage: 10, units: 3 },
+  'Quizzes':     { percentage: 10, units: 3 },
+  'Mid Term':    { percentage: 30, units: 1 },
+  'Final':       { percentage: 50, units: 1 },
+};
+
+const withDefaultWeightage = (categories: MarksCategory[]): MarksCategory[] => {
+  const copy: MarksCategory[] = JSON.parse(JSON.stringify(categories || []));
+  const total = copy.reduce((sum, c) => sum + (Number(c.percentage) || 0), 0);
+  if (total > 0) return copy;
+  const names = new Set(copy.map(c => c.name));
+  if (!Object.keys(DEFAULT_WEIGHTAGE).every(n => names.has(n))) return copy;
+  return copy.map(c => (DEFAULT_WEIGHTAGE[c.name] ? { ...c, ...DEFAULT_WEIGHTAGE[c.name] } : c));
+};
+
 const normalizeCourse = (course: InstructorCourse): InstructorCourse => {
   console.log('[DEBUG normalizeCourse] Entering with course:', {
     id: course.id,
@@ -2758,7 +2777,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
 
   useEffect(() => {
     if (selectedCourse) {
-      setTempCategories(JSON.parse(JSON.stringify(selectedCourse.categories)));
+      setTempCategories(withDefaultWeightage(selectedCourse.categories));
       if (previousCourseIdRef.current !== selectedCourse.id) {
         setSelectedWeightIndex(0);
         previousCourseIdRef.current = selectedCourse.id;
@@ -3441,7 +3460,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
 
   const handleResetWeightage = () => {
     if (selectedCourse) {
-      setTempCategories(JSON.parse(JSON.stringify(selectedCourse.categories)));
+      setTempCategories(withDefaultWeightage(selectedCourse.categories));
     }
   };
 
