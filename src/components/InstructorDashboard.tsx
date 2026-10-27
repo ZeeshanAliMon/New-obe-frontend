@@ -340,6 +340,64 @@ const getShortLabel = (catName: string, unitNo: number, totalUnits: number): str
   return prefix;
 };
 
+// When an assessment unit gets its questions AFTER marks were typed as a single
+// "Direct Marks Score", those marks live only under the unit key
+// ('{Category}-{unitNo}'). The sheet then reads per-question marks only and shows
+// 0, and the next edit would overwrite the real totals with 0. This carries each
+// student's unit total into that unit's question(s) — copied when there is one
+// question, split in proportion to the question marks when there are several —
+// but ONLY for a student who has no per-question mark in that unit at all.
+// Returns new students/obeMarks objects (inputs untouched) and how many marks moved.
+const carryUnitTotalsIntoQuestions = (
+  unitsData: Record<string, UnitItem[]>,
+  students: CourseStudent[],
+  obeMarks: Record<string, Record<string, number>>
+): { students: CourseStudent[]; obeMarks: Record<string, Record<string, number>>; moved: number } => {
+  let moved = 0;
+  const nextObe: Record<string, Record<string, number>> = { ...(obeMarks || {}) };
+  const nextStudents = (students || []).map(std => {
+    const marks: Record<string, number> = { ...(std.marks || (std as any).student_marks || {}) };
+    let touched = false;
+    Object.entries(unitsData || {}).forEach(([catName, units]) => {
+      (units || []).forEach(u => {
+        const qs = (u.questions || []).filter(q => q && q.id);
+        if (qs.length === 0) return;
+        const unitKey = `${catName}-${u.unitNo}`;
+        const unitMark = Number(marks[unitKey]);
+        if (!(unitMark > 0)) return;
+        const qKeys = qs.map(q => `q-${catName}-${u.unitNo}-${q.id}`);
+        const obeKey = Object.keys(nextObe).find(k => areRegNosEqual(k, std.regNo)) || std.regNo;
+        const obeRow = nextObe[obeKey] || {};
+        const hasAnyQuestionMark = qs.some((q, i) => marks[qKeys[i]] !== undefined || obeRow[q.id] !== undefined);
+        if (hasAnyQuestionMark) return;
+        const maxSum = qs.reduce((sum, q) => sum + (Number(q.maxMarks) || 0), 0);
+        let remaining = unitMark;
+        const newRow = { ...obeRow };
+        qs.forEach((q, i) => {
+          const qMax = Number(q.maxMarks) || 0;
+          let val: number;
+          if (i === qs.length - 1) {
+            val = remaining;
+          } else {
+            val = maxSum > 0 ? Math.round(((unitMark * qMax) / maxSum) * 2) / 2 : 0;
+          }
+          val = Math.max(0, qMax > 0 ? Math.min(qMax, val) : val);
+          val = parseFloat(val.toFixed(1));
+          remaining = Math.max(0, remaining - val);
+          marks[qKeys[i]] = val;
+          newRow[q.id] = val;
+        });
+        nextObe[obeKey] = newRow;
+        marks[unitKey] = parseFloat(qs.reduce((sum, _q, i) => sum + (marks[qKeys[i]] || 0), 0).toFixed(1));
+        touched = true;
+        moved += 1;
+      });
+    });
+    return touched ? { ...std, marks, student_marks: marks } : std;
+  });
+  return { students: nextStudents, obeMarks: nextObe, moved };
+};
+
 // Default weightage offered on "Set Weightage" for a course without a usable
 // weightage: nothing set (0%) or a total other than 100% (e.g. leftovers from old
 // demo data — this page itself can only save exactly 100%). Only pre-fills the
@@ -605,6 +663,10 @@ const normalizeCourse = (course: InstructorCourse): InstructorCourse => {
     };
   });
 
+  // Units that got questions after marks were typed as a direct total: show
+  // (and on the next save, store) those totals on the question(s) again.
+  const carried = carryUnitTotalsIntoQuestions(updatedUnitsData, normalizedStudents, rawObeMarks);
+
   return {
     ...course,
     courseType,
@@ -620,9 +682,10 @@ const normalizeCourse = (course: InstructorCourse): InstructorCourse => {
     categories: updatedCategories,
     unitsData: updatedUnitsData,
     obeQuestions: normalizedObeQuestions,
-    obeMarks: rawObeMarks,
-    students: normalizedStudents
-  };
+    obeMarks: carried.obeMarks,
+    obe_marks: carried.obeMarks,
+    students: carried.students
+  } as InstructorCourse;
 };
 
 export const DEPARTMENT_PROGRAMS: Record<string, { id: string; name: string }[]> = {};
@@ -3929,6 +3992,20 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
 
         const updatedObeQuestions = [...otherObeQuestions, ...newObeQuestions];
 
+        // Keep marks that were typed as a direct unit total: move them onto the
+        // question(s) this Ok just created, so they don't show (and save) as 0.
+        const carried = carryUnitTotalsIntoQuestions(
+          { [unitEditingCategory]: tempUnits },
+          c.students,
+          (c.obeMarks || (c as any).obe_marks || {}) as Record<string, Record<string, number>>
+        );
+        if (carried.moved > 0) {
+          setTimeout(() => showNotification(
+            `Kept existing ${unitEditingCategory} marks for ${carried.moved} student entr${carried.moved === 1 ? 'y' : 'ies'} by moving them onto the new question(s). Please check them.`,
+            'info'
+          ), 0);
+        }
+
         console.log('[DEBUG handleSaveUnitSettings] Syncing obeQuestions:', {
           category: unitEditingCategory,
           newQuestionsCount: newObeQuestions.length,
@@ -3939,8 +4016,11 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
           ...c,
           categories: copyCats,
           unitsData: copyUnitsData,
-          obeQuestions: updatedObeQuestions
-        };
+          obeQuestions: updatedObeQuestions,
+          students: carried.students,
+          obeMarks: carried.obeMarks,
+          obe_marks: carried.obeMarks
+        } as InstructorCourse;
       }
       return c;
     }));
