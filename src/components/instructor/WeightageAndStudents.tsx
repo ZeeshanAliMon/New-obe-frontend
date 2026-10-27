@@ -326,70 +326,6 @@ export default function WeightageAndStudents({
       {/* TAB 3: REGISTER STUDENTS */}
       {activeTab === 'students' && (
         <div className="space-y-6">
-          {/* SYNC & QUICK ADD HEADER BAR */}
-          <div className="bg-gradient-to-r from-indigo-50/80 via-white to-slate-50 border border-indigo-100 rounded-2xl p-5 shadow-xs font-sans space-y-4">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-indigo-100/80 pb-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Building className="w-4 h-4 text-indigo-600 shrink-0" />
-                  <h4 className="font-sans font-extrabold text-slate-900 text-sm tracking-wide">
-                    Course Student Enrollment Roster ({selectedCourse.students.length} Enrolled)
-                  </h4>
-                </div>
-                <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                  {selectedCourse.students.length === 1 
-                    ? "Currently 1 student is assigned to this course section from the server database." 
-                    : `Currently ${selectedCourse.students.length} students are enrolled in this course section.`}
-                  Click below to sync all enrolled department students into this course section automatically.
-                </p>
-              </div>
-
-              {onSyncAllStudents && (
-                <button
-                  type="button"
-                  onClick={handleSyncClick}
-                  disabled={isSyncing}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold text-xs rounded-xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                  <span>Sync All Enrolled Department Students</span>
-                </button>
-              )}
-            </div>
-
-            {/* INLINE ADD STUDENT FORM */}
-            {onAddStudent && (
-              <form onSubmit={handleInlineAddStudent} className="pt-1">
-                <span className="block text-[10px] uppercase font-mono font-extrabold text-slate-500 mb-2">
-                  Quick Enroll Student
-                </span>
-                <div className="flex flex-col sm:flex-row gap-2.5 items-stretch">
-                  <input
-                    type="text"
-                    placeholder="Reg No (e.g. 052-FA23-20002)"
-                    value={newRegNo}
-                    onChange={(e) => setNewRegNo(e.target.value)}
-                    className="flex-1 px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-indigo-500 outline-none font-mono font-bold"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Student Name (e.g. SYED SAMI)"
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    className="flex-1 px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-indigo-500 outline-none font-sans font-medium"
-                  />
-                  <button
-                    type="submit"
-                    className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shrink-0"
-                  >
-                    <UserPlus className="w-3.5 h-3.5 text-indigo-300" />
-                    <span>Enroll Student</span>
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-
           {/* ENROLLED STUDENTS MATRIX */}
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
             <div className="px-5 py-3.5 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between">
@@ -443,7 +379,7 @@ export default function WeightageAndStudents({
                   {selectedCourse.students.length === 0 && (
                     <tr>
                       <td colSpan={onUnenrollStudent ? 4 : 3} className="py-8 text-center text-slate-500 font-sans">
-                        No students enrolled yet. Click "Sync All Enrolled Department Students" above to load class roster.
+                        No students enrolled yet. Students are enrolled by the Department Admin.
                       </td>
                     </tr>
                   )}
