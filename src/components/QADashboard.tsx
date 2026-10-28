@@ -97,11 +97,13 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
   const [isEditingPoInline, setIsEditingPoInline] = useState<boolean>(false);
 
   // More Reports state
-  const [moreReportType, setMoreReportType] = useState<'ga_program' | 'ga_batch' | 'ga_semester' | 'ga_course' | 'clo_attainment' | 'po_attainment' | 'co_summary' | 'at_risk' | 'gap_analysis' | 'instructor_performance' | 'cohort_comparison'>('ga_program');
+  const [moreReportType, setMoreReportType] = useState<'ga_program' | 'ga_batch' | 'ga_course' | 'ga_student' | 'clo_attainment' | 'po_attainment' | 'co_summary' | 'at_risk' | 'gap_analysis' | 'instructor_performance' | 'cohort_comparison'>('ga_program');
   const [moreReportProgramId, setMoreReportProgramId] = useState<string>('');
   const [moreReportBatch, setMoreReportBatch] = useState<string>('');
   const [moreReportSemester, setMoreReportSemester] = useState<string>('');
   const [gaCourseOfferingIdx, setGaCourseOfferingIdx] = useState<number>(0);
+  const [moreReportRegNo, setMoreReportRegNo] = useState<string>('');
+  const [moreReportStudentSearch, setMoreReportStudentSearch] = useState<string>('');
   // Pass mark for the Reports page: use the threshold the report itself returns
   // (attainmentThreshold / threshold), falling back to the backend default of 50%.
   const reportThreshold = (d: any): number => {
@@ -297,7 +299,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
 
   // Students for the batch picker (loaded once, when that report is opened)
   useEffect(() => {
-    if (activeModule !== 'more_reports' || moreReportType !== 'ga_batch' || students.length > 0) return;
+    if (activeModule !== 'more_reports' || (moreReportType !== 'ga_batch' && moreReportType !== 'ga_student') || students.length > 0) return;
     apiService.getStudents()
       .then(list => { if (Array.isArray(list)) setStudents(list); })
       .catch(err => console.warn('Failed to load students for batch list:', err));
@@ -1833,8 +1835,8 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                     {[
                       { id: 'ga_program',            label: 'GA Attainment\nby Program',       icon: <Award className="w-5 h-5" />,          color: 'indigo' },
                       { id: 'ga_batch',              label: 'GA Attainment\nby Batch',          icon: <Users className="w-5 h-5" />,          color: 'violet' },
-                      { id: 'ga_semester',           label: 'GA Attainment\nby Semester',       icon: <Layers className="w-5 h-5" />,         color: 'purple' },
                       { id: 'ga_course',             label: 'GA Attainment\nby Course',         icon: <Users className="w-5 h-5" />,          color: 'indigo' },
+                      { id: 'ga_student',            label: 'GA Attainment\nby Student',        icon: <UserCheck className="w-5 h-5" />,      color: 'indigo' },
                       { id: 'clo_attainment',        label: 'CLO Attainment\nby Course',        icon: <Target className="w-5 h-5" />,         color: 'blue' },
                       { id: 'co_summary',            label: 'CO Attainment\nSummary (HEC)',     icon: <FileText className="w-5 h-5" />,       color: 'sky' },
                       { id: 'po_attainment',         label: 'PO Attainment\n(HEC Compliance)',  icon: <BarChart2 className="w-5 h-5" />,      color: 'teal' },
@@ -1863,7 +1865,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                   <div className="flex flex-wrap gap-4 items-end">
 
                     {/* Program — needed for most reports */}
-                    {['ga_program','ga_semester','ga_course','clo_attainment','co_summary','po_attainment','at_risk','gap_analysis','cohort_comparison'].includes(moreReportType) && (
+                    {['ga_program','ga_course','ga_student','clo_attainment','co_summary','po_attainment','at_risk','gap_analysis','cohort_comparison'].includes(moreReportType) && (
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Programme</label>
                         <select
@@ -1934,6 +1936,39 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                             return list.map((c: any) => <option key={c.id} value={c.code}>{c.code} — {c.title}</option>);
                           })()}
                         </select>
+                      </div>
+                    )}
+
+                    {/* Student for "GA Attainment by Student" */}
+                    {moreReportType === 'ga_student' && (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Student</label>
+                        <div className="flex gap-2">
+                          <input
+                            value={moreReportStudentSearch}
+                            onChange={e => setMoreReportStudentSearch(e.target.value)}
+                            placeholder="Search name or reg no"
+                            className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-44"
+                          />
+                          <select
+                            value={moreReportRegNo}
+                            onChange={e => { setMoreReportRegNo(e.target.value); setMoreReportData(null); }}
+                            className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[240px]"
+                          >
+                            <option value="">— Select Student —</option>
+                            {(() => {
+                              const q = moreReportStudentSearch.trim().toLowerCase();
+                              const prog = String(moreReportProgramId || '').toLowerCase();
+                              const list = (students as any[])
+                                .filter(st => !st.departmentId || !activeDeptId || String(st.departmentId).toLowerCase() === String(activeDeptId).toLowerCase())
+                                .filter(st => !prog || String(st.programId || '').toLowerCase() === prog)
+                                .filter(st => !q || String(st.regNo).toLowerCase().includes(q) || String(st.name || '').toLowerCase().includes(q))
+                                .sort((a, b) => String(a.regNo).localeCompare(String(b.regNo)));
+                              return list.map(st => <option key={st.regNo} value={st.regNo}>{st.regNo} — {st.name}</option>);
+                            })()}
+                          </select>
+                        </div>
+                        {students.length === 0 && <span className="text-[10px] text-slate-400">Loading students…</span>}
                       </div>
                     )}
 
@@ -2012,9 +2047,9 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                           } else if (moreReportType === 'ga_batch') {
                             if (!moreReportBatch) throw new Error('Please select a batch.');
                             result = await get(`/reports/batch-ga-attainment/?batch=${encodeURIComponent(moreReportBatch)}&departmentId=${encodeURIComponent(activeDeptId)}`);
-                          } else if (moreReportType === 'ga_semester') {
-                            if (!moreReportProgramId) throw new Error('Please select a programme.');
-                            result = await get(`/reports/program-ga-attainment-by-semester/?programId=${encodeURIComponent(moreReportProgramId)}`);
+                          } else if (moreReportType === 'ga_student') {
+                            if (!moreReportRegNo) throw new Error('Please select a student.');
+                            result = await get(`/reports/student-ga-questions/?regNo=${encodeURIComponent(moreReportRegNo)}`);
                           } else if (moreReportType === 'ga_course') {
                             if (!moreReportCourseCode) throw new Error('Please select a course.');
                             const params = new URLSearchParams({ courseCode: moreReportCourseCode });
@@ -2166,58 +2201,101 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                       </div>
                     )}
 
-                    {/* GA by Semester */}
-                    {moreReportType === 'ga_semester' && moreReportData.semesters && (
-                      <div className="space-y-4">
-                        {(() => {
-                          const sems: any[] = moreReportData.semesters;
-                          const gaIds: string[] = [];
-                          sems.forEach(sem => (sem.attributes || []).forEach((ga: any) => { if (!gaIds.includes(String(ga.id))) gaIds.push(String(ga.id)); }));
-                          const lookup = (gaId: string, semKey: string) => {
-                            const sem = sems.find(x => String(x.semester) === semKey);
-                            const ga = (sem?.attributes || []).find((g: any) => String(g.id) === gaId);
-                            return ga ? (ga.averageAttainment ?? 0) : null;
-                          };
-                          gaIds.sort((a, b) => gaNum(a) - gaNum(b));
-                          return gaIds.length > 0 && (
-                            <ChartCard title="GA attainment heatmap" subtitle="Darker cells mean higher attainment. Each column is a semester.">
-                              <HeatmapChart rows={gaIds.map(gaLabel)} cols={sems.map(x => String(x.semester))} value={(r, c) => lookup(gaIds[gaIds.map(gaLabel).indexOf(r)], c)} rowLabel="GA" colLabel={c => `Sem ${c}`} />
-                            </ChartCard>
-                          );
-                        })()}
-                        {moreReportData.semesters.map((sem: any, i: number) => (
-                          <div key={i} className="border border-slate-200 rounded-2xl overflow-hidden">
-                            <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
-                              <span className="text-xs font-black text-slate-700">{sem.semester} Semester</span>
-                            </div>
-                            <table className="w-full text-xs">
-                              <thead>
-                                <tr className="border-b border-slate-100">
-                                  <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">GA</th>
-                                  <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Title</th>
-                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Attainment %</th>
-                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Status</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {[...(sem.attributes || [])].sort(byGa('id')).map((ga: any, j: number) => (
-                                  <tr key={j} className="border-b border-slate-50 hover:bg-slate-50">
-                                    <td className="px-3 py-2 font-bold text-indigo-700">{gaLabel(ga.id)}</td>
-                                    <td className="px-3 py-2 text-slate-700">{ga.title}</td>
-                                    <td className="px-3 py-2 text-center font-bold">{(ga.averageAttainment ?? 0).toFixed(1)}%</td>
-                                    <td className="px-3 py-2 text-center">
-                                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${(ga.averageAttainment ?? 0) >= reportThreshold(moreReportData) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                        {(ga.averageAttainment ?? 0) >= reportThreshold(moreReportData) ? 'Passed' : 'Audit Required'}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                    {/* GA Attainment by Student */}
+                    {moreReportType === 'ga_student' && Array.isArray(moreReportData.gas) && Array.isArray(moreReportData.courses) && (() => {
+                      const gasS: any[] = moreReportData.gas;
+                      const coursesS: any[] = moreReportData.courses;
+                      const attainedN = gasS.filter(g => g.attained).length;
+                      const gaCols = gasS.map(g => g.id);
+                      return (
+                        <div className="space-y-4">
+                          <div className="flex gap-2 flex-wrap items-center text-xs">
+                            <span className="bg-indigo-100 text-indigo-800 font-bold px-3 py-1 rounded-full">{moreReportData.regNo} — {moreReportData.name}</span>
+                            <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{coursesS.length} course{coursesS.length === 1 ? '' : 's'}</span>
+                            <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{attainedN} of {gasS.length} GAs attained{gasS.length ? ` (${Math.round(attainedN / gasS.length * 100)}%)` : ''}</span>
+                            <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">Question passed at ≥ {moreReportData.questionPassThreshold ?? 50}% · GA attained at ≥ {moreReportData.gaAttainmentThreshold ?? 50}%</span>
                           </div>
-                        ))}
-                      </div>
-                    )}
+
+                          {gasS.length === 0 ? (
+                            <p className="text-xs text-slate-500">None of this student's course questions are mapped (through a CLO) to a GA yet.</p>
+                          ) : (
+                            <>
+                              <ChartCard title="GA attainment across all courses" subtitle="Questions passed ÷ questions mapped to the GA, over every course the student is enrolled in">
+                                <HBarChart threshold={moreReportData.gaAttainmentThreshold ?? 50} passLabel="Attained" failLabel="Not attained"
+                                  items={gasS.map(g => ({ label: gaLabel(g.id), detail: g.title, value: g.percent, pass: g.attained, extra: [`${g.passed} of ${g.total} questions passed`, `${g.courseCount} course${g.courseCount === 1 ? '' : 's'}`] }))} />
+                              </ChartCard>
+
+                              <table className="w-full border-collapse text-xs">
+                                <thead>
+                                  <tr className="bg-slate-50 border-b border-slate-200">
+                                    <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">GA</th>
+                                    <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Title</th>
+                                    <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Questions Passed</th>
+                                    <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Attainment</th>
+                                    <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Courses</th>
+                                    <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {gasS.map(g => (
+                                    <tr key={g.id} className="border-b border-slate-100 hover:bg-slate-50">
+                                      <td className="px-3 py-2 font-black text-indigo-700">{gaLabel(g.id)}</td>
+                                      <td className="px-3 py-2 text-slate-700">{g.title}</td>
+                                      <td className="px-3 py-2 text-center">{g.passed} / {g.total}</td>
+                                      <td className="px-3 py-2 text-center font-bold">{Number(g.percent).toFixed(1)}%</td>
+                                      <td className="px-3 py-2 text-center text-slate-500">{g.courseCount}</td>
+                                      <td className="px-3 py-2 text-center">
+                                        <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${g.attained ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{g.attained ? 'Attained' : 'Not Attained'}</span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </>
+                          )}
+
+                          {coursesS.length > 0 && (
+                            <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                              <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
+                                <span className="text-xs font-black text-slate-700">By course</span>
+                                <span className="text-[10px] text-slate-500">questions passed / questions for the GA in that course</span>
+                              </div>
+                              <div className="max-h-[420px] overflow-auto">
+                                <table className="w-full text-xs">
+                                  <thead className="sticky top-0 bg-white shadow-sm">
+                                    <tr className="border-b border-slate-200">
+                                      <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Course</th>
+                                      <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Term</th>
+                                      {gaCols.map(g => <th key={g} className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">{gaLabel(g)}</th>)}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {coursesS.map((c, i) => (
+                                      <tr key={`${c.courseCode}-${c.academicYear}-${i}`} className="border-b border-slate-50 hover:bg-slate-50">
+                                        <td className="px-3 py-1.5 text-slate-700"><span className="font-mono font-bold">{c.courseCode}</span> {c.courseTitle}</td>
+                                        <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">{c.academicYear || '—'}</td>
+                                        {gaCols.map(g => {
+                                          const v = c.gas?.[g];
+                                          return (
+                                            <td key={g} className="px-3 py-1.5 text-center" title={v ? `${v.passed} of ${v.total} questions passed` : ''}>
+                                              {v ? (
+                                                <span className={`inline-block min-w-[64px] px-2 py-0.5 rounded-full font-bold text-[10px] ${v.attained ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                  {v.passed}/{v.total} · {Math.round(v.percent)}%
+                                                </span>
+                                              ) : <span className="text-slate-300">—</span>}
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* GA Attainment by Course (students) */}
                     {moreReportType === 'ga_course' && Array.isArray(moreReportData.offerings) && (() => {

@@ -362,3 +362,54 @@ export function StackedBarChart({ rows, parts }: {
     </div>
   );
 }
+
+/* ---------- column chart of counts (e.g. grade distribution) ---------- */
+export function CountColumnChart({ items, total, height = 150 }: {
+  items: { label: string; value: number; color?: string }[]; total?: number; height?: number;
+}) {
+  const t = useTip();
+  const max = Math.max(1, ...items.map(i => i.value));
+  const step = max <= 5 ? 1 : max <= 10 ? 2 : max <= 25 ? 5 : max <= 50 ? 10 : 20;
+  const top = Math.ceil(max / step) * step;
+  const ticks: number[] = [];
+  for (let v = 0; v <= top; v += step) ticks.push(v);
+  const sum = total ?? items.reduce((a, b) => a + b.value, 0);
+  return (
+    <div ref={t.ref} className="relative">
+      <div className="flex pt-4">
+        <div className="relative shrink-0 w-8" style={{ height }}>
+          {ticks.map(tk => (
+            <span key={tk} className="absolute right-2 text-[10px] leading-none tabular-nums" style={{ bottom: `calc(${(tk / top) * 100}% - 5px)`, color: CHART.muted }}>{tk}</span>
+          ))}
+        </div>
+        <div className="relative flex-1">
+          <div className="absolute inset-x-0 top-0 pointer-events-none" style={{ height }}>
+            {ticks.map(tk => <div key={tk} className="absolute left-0 right-0 h-px" style={{ bottom: `${(tk / top) * 100}%`, background: tk === 0 ? CHART.axis : CHART.grid }} />)}
+          </div>
+          <div className="relative flex">
+            {items.map(it => {
+              const pct = sum > 0 ? (it.value / sum) * 100 : 0;
+              return (
+                <div key={it.label} className="flex flex-1 flex-col items-center">
+                  <div className="relative flex w-full items-end justify-center" style={{ height }}>
+                    <div
+                      className="relative rounded-t"
+                      style={{ width: 24, height: `${(it.value / top) * 100}%`, minHeight: it.value > 0 ? 2 : 0, background: it.color || CHART.series }}
+                      onMouseMove={e => t.show(e, it.label, [`${it.value} student${it.value === 1 ? '' : 's'}`, `${pct.toFixed(1)}%`])}
+                      onMouseLeave={t.hide}
+                    >
+                      <span className="absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold tabular-nums" style={{ color: CHART.ink }}>{it.value}</span>
+                    </div>
+                  </div>
+                  <div className="pt-1 text-center text-[11px] font-bold" style={{ color: CHART.ink2 }}>{it.label}</div>
+                  <div className="text-center text-[9.5px] tabular-nums" style={{ color: CHART.muted }}>{pct.toFixed(0)}%</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      {t.node}
+    </div>
+  );
+}

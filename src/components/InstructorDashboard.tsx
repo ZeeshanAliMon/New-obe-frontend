@@ -47,6 +47,7 @@ import { Course, Department, Program, MarksCategory, UnitItem, UnitQuestion, Cou
 import MarksEntrySpreadsheet from './MarksEntrySpreadsheet';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
+import { HBarChart, CountColumnChart, CHART } from './charts/ReportCharts';
 import { toJpeg } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { DEFAULT_CUSTOM_GRADES, getLetterGrade, parsePercentRange, getCourseLetterGrade, computeCourseAggregate } from '../utils/grading';
@@ -1086,6 +1087,58 @@ const MarksheetDocument = ({
     }
   });
 
+  // ── Class summary used by the charts under the ledger (same numbers as the table) ──
+  const cloPassThreshold = (code: string): number => {
+    const list = cloAssessments[code] || [];
+    if (list.length === 0) return 50;
+    const sum = list.reduce((acc, ass) => acc + ((ass.passing ?? (ass.maxMarks * 0.5)) / (ass.maxMarks || 1)) * 100, 0);
+    return Math.round(sum / list.length);
+  };
+  const cloScoreFor = (student: CourseStudent, code: string): number => {
+    let total = 0;
+    (cloAssessments[code] || []).forEach(ass => {
+      let obtained = 0;
+      if (ass.questionId) {
+        obtained = student.marks?.[`q-${ass.categoryName}-${ass.unitNo}-${ass.questionId}`] ?? 0;
+        if (obtained === 0) obtained = student.marks?.[`${ass.categoryName}-${ass.unitNo}`] ?? 0;
+      } else {
+        obtained = student.marks?.[`${ass.categoryName}-${ass.unitNo}`] ?? 0;
+      }
+      total += (ass.maxMarks > 0 ? obtained / ass.maxMarks : 0) * ass.relativeWeight;
+    });
+    return total;
+  };
+  const nStudents = course.students.length;
+  const cloSummary = cloCodes
+    .filter(code => (cloAssessments[code] || []).length > 0)
+    .map(code => {
+      const threshold = cloPassThreshold(code);
+      const scores = course.students.map(st => cloScoreFor(st, code));
+      const attained = scores.filter(sc => sc >= threshold).length;
+      return {
+        code, threshold, attained,
+        pct: nStudents ? (attained / nStudents) * 100 : 0,
+        avg: nStudents ? scores.reduce((a, b) => a + b, 0) / nStudents : 0,
+      };
+    });
+  const GA_ATTAIN_PCT = 50;
+  const gaSummary = sortedGAKeys
+    .filter(ga => ga !== 'No GA')
+    .map(ga => {
+      const clos = (gaToCLOsMap[ga] || []).filter(c => (cloAssessments[c.code] || []).length > 0);
+      if (clos.length === 0) return null;
+      const scores = course.students.map(st => clos.reduce((a, c) => a + cloScoreFor(st, c.code), 0) / clos.length);
+      const attained = scores.filter(sc => sc >= GA_ATTAIN_PCT).length;
+      return {
+        ga, label: formatGACodeToStandard(ga), clos: clos.map(c => c.code), attained,
+        pct: nStudents ? (attained / nStudents) * 100 : 0,
+        avg: nStudents ? scores.reduce((a, b) => a + b, 0) / nStudents : 0,
+      };
+    })
+    .filter(Boolean) as { ga: string; label: string; clos: string[]; attained: number; pct: number; avg: number }[];
+  const failCount = studentTotalGrades.filter(it => it.grade === 'F').length;
+  const classAverage = nStudents ? studentTotalGrades.reduce((a, it) => a + it.aggregate, 0) / nStudents : 0;
+
   // Determine dynamic styles based on number of columns
   let totalTableCols = 3;
   if (reportType === 'ga') {
@@ -1859,6 +1912,103 @@ const MarksheetDocument = ({
           )}
         </div>
       </div>
+
+      {/* Class summary with chart (printed with the sheet) */}
+      {nStudents > 0 && (reportType === 'clo' || reportType === 'ga' || reportType === 'standard' || reportType === 'combined') && (
+        <div className="mt-6 no-print-break font-sans">
+          <div className="flex items-end justify-between border-b-2 border-black pb-1">
+            <h3 className="text-[13px] font-black uppercase tracking-wide text-slate-900">
+              {reportType === 'clo' ? 'CLO Attainment Summary' : reportType === 'ga' ? 'GA Attainment Summary' : 'Grade Distribution'}
+            </h3>
+            <span className="text-[11.5px] font-bold text-slate-800">
+              Total Students: {nStudents}
+              {(reportType === 'standard' || reportType === 'combined') && (
+                <> &nbsp;·&nbsp; Passed: {nStudents - failCount} ({((nStudents - failCount) / nStudents * 100).toFixed(1)}%) &nbsp;·&nbsp; Failed: {failCount} ({(failCount / nStudents * 100).toFixed(1)}%) &nbsp;·&nbsp; Class Average: {classAverage.toFixed(1)}%</>
+              )}
+            </span>
+          </div>
+
+          {(reportType === 'standard' || reportType === 'combined') && (
+            <div className="mt-3 grid grid-cols-[3fr_2fr] gap-5 items-start">
+              <CountColumnChart
+                total={nStudents}
+                items={gradingList.map(g => ({ label: g.grade, value: gradeCounts[g.grade] || 0, color: g.grade === 'F' ? CHART.critical : CHART.series }))}
+              />
+              <table className="w-full border-collapse border border-black text-[11px] text-center">
+                <thead>
+                  <tr className="bg-slate-50 font-black"><th className="border border-black p-1">Grade</th><th className="border border-black p-1">From</th><th className="border border-black p-1">Students</th><th className="border border-black p-1">%</th></tr>
+                </thead>
+                <tbody>
+                  {gradingList.map(g => (
+                    <tr key={g.grade}>
+                      <td className="border border-black p-1 font-black">{g.grade}</td>
+                      <td className="border border-black p-1">{g.min}%</td>
+                      <td className="border border-black p-1 font-bold">{gradeCounts[g.grade] || 0}</td>
+                      <td className="border border-black p-1">{(((gradeCounts[g.grade] || 0) / nStudents) * 100).toFixed(1)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {reportType === 'clo' && (
+            cloSummary.length > 0 ? (
+              <div className="mt-3 grid grid-cols-[3fr_2fr] gap-5 items-start">
+                <div>
+                  <p className="text-[10.5px] text-slate-600 mb-1">Students who attained each CLO (CLO total at or above its passing threshold)</p>
+                  <HBarChart threshold={50} passLabel="At least half of the class attained" failLabel="Less than half attained"
+                    items={cloSummary.map(c => ({ label: c.code, value: c.pct, extra: [`${c.attained} of ${nStudents} students`, `Passing threshold ${c.threshold}%`, `Average ${c.avg.toFixed(1)}%`] }))} />
+                </div>
+                <table className="w-full border-collapse border border-black text-[11px] text-center">
+                  <thead>
+                    <tr className="bg-slate-50 font-black"><th className="border border-black p-1">CLO</th><th className="border border-black p-1">Pass at</th><th className="border border-black p-1">Attained</th><th className="border border-black p-1">%</th><th className="border border-black p-1">Avg</th></tr>
+                  </thead>
+                  <tbody>
+                    {cloSummary.map(c => (
+                      <tr key={c.code}>
+                        <td className="border border-black p-1 font-black">{c.code}</td>
+                        <td className="border border-black p-1">{c.threshold}%</td>
+                        <td className="border border-black p-1 font-bold">{c.attained} / {nStudents}</td>
+                        <td className="border border-black p-1 font-bold">{c.pct.toFixed(1)}%</td>
+                        <td className="border border-black p-1">{c.avg.toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="mt-2 text-[11px] text-slate-500">No assessments are mapped to CLOs yet.</p>
+          )}
+
+          {reportType === 'ga' && (
+            gaSummary.length > 0 ? (
+              <div className="mt-3 grid grid-cols-[3fr_2fr] gap-5 items-start">
+                <div>
+                  <p className="text-[10.5px] text-slate-600 mb-1">Students who attained each GA (GA total at least {GA_ATTAIN_PCT}%)</p>
+                  <HBarChart threshold={50} passLabel="At least half of the class attained" failLabel="Less than half attained"
+                    items={gaSummary.map(g => ({ label: g.label, value: g.pct, extra: [`${g.attained} of ${nStudents} students`, `CLOs: ${g.clos.join(', ')}`, `Average ${g.avg.toFixed(1)}%`] }))} />
+                </div>
+                <table className="w-full border-collapse border border-black text-[11px] text-center">
+                  <thead>
+                    <tr className="bg-slate-50 font-black"><th className="border border-black p-1">GA</th><th className="border border-black p-1">CLOs</th><th className="border border-black p-1">Attained</th><th className="border border-black p-1">%</th><th className="border border-black p-1">Avg</th></tr>
+                  </thead>
+                  <tbody>
+                    {gaSummary.map(g => (
+                      <tr key={g.ga}>
+                        <td className="border border-black p-1 font-black">{g.label}</td>
+                        <td className="border border-black p-1">{g.clos.join(', ')}</td>
+                        <td className="border border-black p-1 font-bold">{g.attained} / {nStudents}</td>
+                        <td className="border border-black p-1 font-bold">{g.pct.toFixed(1)}%</td>
+                        <td className="border border-black p-1">{g.avg.toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="mt-2 text-[11px] text-slate-500">No CLOs of this course are mapped to a GA yet.</p>
+          )}
+        </div>
+      )}
 
       {/* Signature & Attestation Panel Block */}
       <div className="mt-12 flex flex-col sm:flex-row justify-between items-end gap-12 text-[10px] font-sans pt-12 border-t border-dashed border-slate-350 no-print-break">

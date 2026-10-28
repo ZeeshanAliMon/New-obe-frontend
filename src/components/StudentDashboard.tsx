@@ -34,6 +34,7 @@ import {
 import { Student, Course, Program, Department, InstructorCourse, GA } from '../types';
 import { apiService } from '../services/apiService';
 import { buildStudentMarkKeys, computeCourseAggregate, getCourseLetterGrade } from '../utils/grading';
+import { ChartCard, HBarChart } from './charts/ReportCharts';
 
 const normalizeRegNo = (reg: string) => {
   if (!reg) return '';
@@ -2671,6 +2672,21 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                   </div>
                 </div>
 
+                {cloRowsByCourse.some(x => x.rows.length > 0) && (() => {
+                  const withData = cloRowsByCourse.filter(x => x.rows.length > 0);
+                  const totalClos = withData.reduce((a, x) => a + x.rows.length, 0);
+                  const attainedClos = withData.reduce((a, x) => a + x.attained, 0);
+                  return (
+                    <ChartCard
+                      title="Average CLO attainment by course"
+                      subtitle={`${attainedClos} of ${totalClos} CLOs attained across ${withData.length} course${withData.length === 1 ? '' : 's'} (${totalClos ? Math.round((attainedClos / totalClos) * 100) : 0}%)`}
+                    >
+                      <HBarChart threshold={50} passLabel="Average 50% or above" failLabel="Average below 50%"
+                        items={withData.map(x => ({ label: String(x.course.code), detail: x.course.title, value: x.average ?? 0, extra: [`${x.attained} of ${x.rows.length} CLOs attained`] }))} />
+                    </ChartCard>
+                  );
+                })()}
+
                 {cloRowsByCourse.length === 0 && (
                   <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
                     <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-2" />
@@ -2709,6 +2725,10 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
 
                       {isOpen && (rows.length > 0 ? (
                         <div className="border-t border-slate-200 overflow-x-auto">
+                          <div className="px-4 sm:px-5 pt-4 pb-2">
+                            <HBarChart threshold={50} passLabel="Attained" failLabel="Not attained"
+                              items={rows.map((r: any) => ({ label: String(r.code), detail: r.description, value: r.percentage, pass: r.attained }))} />
+                          </div>
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
@@ -2796,6 +2816,19 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                   </div>
                 </div>
 
+                {gaAttainmentProfile.length > 0 && (() => {
+                  const attainedGas = gaAttainmentProfile.filter(g => g.attained).length;
+                  return (
+                    <ChartCard
+                      title="Overall GA attainment profile"
+                      subtitle={`${attainedGas} of ${gaAttainmentProfile.length} GAs attained (${Math.round((attainedGas / gaAttainmentProfile.length) * 100)}%) — average of the mapped CLOs across all your courses`}
+                    >
+                      <HBarChart threshold={50} passLabel="Attained (50% or above)" failLabel="Not attained"
+                        items={gaAttainmentProfile.map(g => ({ label: formatGACodeToStandard(g.id), detail: g.name, value: g.score, pass: g.attained, extra: [`${g.contributingCount} CLO${g.contributingCount === 1 ? '' : 's'} from ${g.coursesList.length} course${g.coursesList.length === 1 ? '' : 's'}`] }))} />
+                    </ChartCard>
+                  );
+                })()}
+
                 {gaRowsByCourse.length === 0 && (
                   <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
                     <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-2" />
@@ -2834,6 +2867,10 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
 
                       {isOpen && (rows.length > 0 ? (
                         <div className="border-t border-slate-200 overflow-x-auto">
+                          <div className="px-4 sm:px-5 pt-4 pb-2">
+                            <HBarChart threshold={50} passLabel="Attained" failLabel="Not attained"
+                              items={rows.map((r: any) => ({ label: formatGACodeToStandard(r.id), detail: r.name, value: r.score, pass: r.attained, extra: [`${r.cloCount} CLO${r.cloCount === 1 ? '' : 's'}`] }))} />
+                          </div>
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
