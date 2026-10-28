@@ -72,7 +72,8 @@ export const getRegNoPreview = (regNo: string) => {
   const currentIndex = currentSemesterTerm === 'Spring' ? (2 * adjustedCurrentYear) : (2 * adjustedCurrentYear + 1);
 
   const diff = currentIndex - startIndex + 1;
-  const semesterNum = diff > 0 ? diff : 1;
+  // Backend accepts 1st..8th only; older batches would otherwise be rejected.
+  const semesterNum = diff > 0 ? Math.min(diff, 8) : 1;
 
   const getOrdinalSuffix = (num: number): string => {
     if (num <= 0) return '1st';

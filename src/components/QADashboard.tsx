@@ -655,12 +655,13 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
 
     try {
       setSavingLoad(true);
-      await apiService.createCourse(newC);
+      // Keep the server's copy: its id is what later PATCHes (GA mapping) use.
+      const created = await apiService.createCourse(newC);
       setData(prev => {
         if (!prev) return prev;
         return {
           ...prev,
-          courses: [...prev.courses, newC]
+          courses: [...prev.courses, created]
         };
       });
       // Reset forms
@@ -693,7 +694,9 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
         programId: editCourseProgramId
       };
 
-      const updated = await apiService.updateCourse(editingCourse.id, updatedSpecs);
+      // Send the full course so unedited fields (mapped GAs, subtype) are not
+      // reset to defaults, and look it up under its original program.
+      const updated = await apiService.updateCourse(editingCourse.id, { ...editingCourse, ...updatedSpecs }, editingCourse.programId);
       
       setData(prev => {
         if (!prev) return prev;

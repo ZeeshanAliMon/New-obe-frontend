@@ -71,6 +71,9 @@ export default function MarksEntrySpreadsheet({
   const [draftMarks, setDraftMarks] = useState<Record<string, Record<string, number>>>({});
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  // Raw text of the cell being typed in, so partial decimals like "7." survive
+  // until blur (the draft itself only holds numbers).
+  const [editingText, setEditingText] = useState<{ key: string; text: string } | null>(null);
 
   // Initialize draftMarks whenever the course or student list changes
   useEffect(() => {
@@ -723,7 +726,7 @@ export default function MarksEntrySpreadsheet({
                                   id={inputCellId}
                                   type="text"
                                   inputMode="decimal"
-                                  value={cellValue !== undefined ? cellValue : ''}
+                                  value={editingText?.key === `${student.regNo}|${markKey}` ? editingText.text : (cellValue !== undefined ? cellValue : '')}
                                   placeholder="0"
                                   className={`w-full text-center font-mono font-bold text-xs bg-transparent border-none outline-none p-0 focus:ring-0 ${
                                     isEmpty ? 'text-rose-600' : 'text-slate-900'
@@ -739,6 +742,7 @@ export default function MarksEntrySpreadsheet({
                                         }
                                         return;
                                       }
+                                      setEditingText({ key: `${student.regNo}|${markKey}`, text: val });
                                       setDraftMarks(prev => {
                                         const nextStdDraft = { ...(prev[student.regNo] || {}) };
                                         nextStdDraft[markKey] = numVal;
@@ -751,6 +755,7 @@ export default function MarksEntrySpreadsheet({
                                     }
                                   }}
                                   onBlur={(e) => {
+                                    setEditingText(null);
                                     const val = parseFloat(e.target.value);
                                     if (isNaN(val) || val < 0) {
                                       setDraftMarks(prev => {

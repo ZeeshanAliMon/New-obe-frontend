@@ -133,8 +133,8 @@ export default function Login({ onLogin }: LoginProps) {
       setError('Passwords do not match.');
       return;
     }
-    if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters long.');
+    if (newPassword.length < 8) {
+      setError('Password must be at least 8 characters long.');
       return;
     }
 
@@ -163,6 +163,17 @@ export default function Login({ onLogin }: LoginProps) {
 
       // Password changed successfully! Clear and log in
       setMustChangePassword(false);
+      // The stored user still carries mustChangePassword: true from login,
+      // which makes apiService block every request and expire the session.
+      try {
+        const storedUser = JSON.parse(localStorage.getItem('IQRA_OBE_LOGGED_IN_USER') || 'null');
+        if (storedUser) {
+          storedUser.mustChangePassword = false;
+          localStorage.setItem('IQRA_OBE_LOGGED_IN_USER', JSON.stringify(storedUser));
+        }
+      } catch (e) {
+        console.warn('Could not update stored user after password change', e);
+      }
       if (tempCredentials) {
         onLogin(tempCredentials.userType, tempCredentials.identifier);
       } else {

@@ -808,6 +808,8 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     (async () => {
       const failures: string[] = [];
       for (const ic of updatedInstructorCourses) {
+        // A closed course's roster is locked server-side; syncing it only errors.
+        if (ic.status === 'closed') continue;
         if ((ic.students && ic.students.length > 0) || forceSyncCodes?.has(normalizeCourseCode(ic.code))) {
           try {
             await apiService.enrollStudents(
@@ -1652,7 +1654,9 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     if (acadYear) {
       acadYear = acadYear.charAt(0).toUpperCase() + acadYear.slice(1);
     }
-    const courseId = `course-assigned-${assignment.courseCode}-${employeeId}-${finalProgramId}-${acadYear}`;
+    // Prefer the id the backend issued for this assignment; the rebuilt one
+    // differs in case/format from the stored frontend_id.
+    const courseId = assignment.id ? String(assignment.id) : `course-assigned-${assignment.courseCode}-${employeeId}-${finalProgramId}-${acadYear}`;
 
     setConfirmDialog({
       isOpen: true,

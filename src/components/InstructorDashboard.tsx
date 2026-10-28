@@ -549,7 +549,7 @@ const normalizeCourse = (course: InstructorCourse): InstructorCourse => {
         const labelPrefix = isPresentation ? 'Module' : 'Question';
         formattedQuestions = [
           {
-            id: `q-default-${unitNo}-${Date.now()}`,
+            id: `q-default-${key}-${unitNo}-${Date.now()}`,
             name: `${labelPrefix} 1`,
             maxMarks: totalMarks || 10,
             mappedCLOs: mappedCLOs.length > 0 ? [mappedCLOs[0]] : ['CLO-1']
@@ -716,7 +716,8 @@ const redistributeCategoryUnits = (catUnits: number, currentList: UnitItem[]): U
       passing: existing ? existing.passing : 5,
       totalMarks: existing ? existing.totalMarks : 10,
       weightage: weights[i],
-      mappedCLOs: existing ? existing.mappedCLOs : []
+      mappedCLOs: existing ? existing.mappedCLOs : [],
+      questions: existing ? existing.questions : undefined
     });
   }
   return result;
@@ -2269,7 +2270,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
           setCourses(prev => {
             let changed = false;
             const next = prev.map(localC => {
-              const backendC = res.find(bc => bc.id === localC.id || bc.code === localC.code);
+              const backendC = res.find(bc => bc.id === localC.id) || res.find(bc => bc.code === localC.code);
               if (!backendC) return localC;
 
               const localStudents = localC.students || [];
@@ -2360,6 +2361,11 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
   const [activeTab, setActiveTab] = useState<'weightage' | 'edit-items' | 'students' | 'grade' | 'obe' | 'clo' | 'grading-system' | 'enter-marks'>('weightage');
   const [spreadsheetSearchQuery, setSpreadsheetSearchQuery] = useState<string>('');
   const [tempCustomGrades, setTempCustomGrades] = useState<{ grade: string; percentage: string; points: string }[] | null>(null);
+
+  // Unsaved custom-grade edits belong to the course they were made on.
+  useEffect(() => {
+    setTempCustomGrades(null);
+  }, [activeCourseId]);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error-over' | 'error-under'>('idle');
   const [isAddingCourse, setIsAddingCourse] = useState(false);
   const [courseToDeleteId, setCourseToDeleteId] = useState<string | null>(null);
@@ -3026,7 +3032,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
     if (saveStatus !== 'success') {
       setSaveStatus('idle');
     }
-  }, [tempCategories, selectedWeightIndex, saveStatus]);
+  }, [tempCategories, selectedWeightIndex]);
 
   // Sync selectedMarksCategoryName to the first active category if needed
   useEffect(() => {

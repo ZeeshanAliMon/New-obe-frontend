@@ -468,9 +468,9 @@ const mapCourseToBackend = (c: Course): any => {
     course_type: c.type === 'elective' ? 'elective' : 'core',
     courseType: c.type === 'elective' ? 'elective' : 'core',
     // Fallback/forward-compatibility in case backend supports subtype
-    course_subtype: c.courseType || 'Theory',
-    courseSubtype: c.courseType || 'Theory',
-    subtype: c.courseType || 'Theory'
+    course_subtype: (c.courseType || 'Theory').toLowerCase(),
+    courseSubtype: (c.courseType || 'Theory').toLowerCase(),
+    subtype: (c.courseType || 'Theory').toLowerCase()
   };
 };
 
@@ -1121,6 +1121,11 @@ export const apiService = {
 
       return true;
     } catch (err: any) {
+      // Same as updateStudent: a real server refusal must reach the caller
+      // instead of being reported as a successful delete.
+      if (isBackendUser()) {
+        throw err;
+      }
       console.warn("Backend API for students offline or deletion failed. Cleared locally for resilience.", err);
       const current = await this.getStudents();
       const updated = current.filter(s => s.regNo.toLowerCase() !== regNo.toLowerCase());
