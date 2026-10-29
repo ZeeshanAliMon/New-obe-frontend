@@ -329,6 +329,24 @@ const normalizeCourse = (c: any): Course => {
   };
 };
 
+// ── Instructor course save versioning ─────────────────────────────────────────
+// The server stamps each course with updatedAt. A save carries the version this
+// tab last saw; the server refuses it if the course was saved since (another tab
+// or computer), so older marks can't overwrite newer ones. Saves run one at a
+// time so a tab never trips over its own in-flight save, and a course whose
+// payload is unchanged since its last successful save is not sent again.
+const courseVersions = new Map<string, string>();
+const lastSentCourseJson = new Map<string, string>();
+let instructorSaveChain: Promise<unknown> = Promise.resolve();
+const STALE_COURSE_MESSAGE =
+  'This course was changed in another tab or on another computer. Reload the page to get the latest marks before editing.';
+
+const recordCourseVersions = (list: any[]) => {
+  (list || []).forEach((ic: any) => {
+    if (ic && ic.id && ic.updatedAt) courseVersions.set(String(ic.id), String(ic.updatedAt));
+  });
+};
+
 const mapInstructorCourseToBackend = (c: InstructorCourse): any => {
   // Map obeQuestions to both camelCase and snake_case
   const mappedObeQuestions = (c.obeQuestions || []).map((q: any) => ({
@@ -814,6 +832,7 @@ export const apiService = {
     }
     const data = await response.json();
     if (Array.isArray(data)) {
+      recordCourseVersions(data);
       // Normalize enrolled students and obe_marks from backend to standard frontend structure
       data.forEach((ic: any) => {
         const rawStuds = ic.students || ic.enrolled_students || ic.enrolledStudents || ic.student_list || ic.studentList || ic.enrolled_student_list || ic.enrolledStudentList || [];
@@ -861,55 +880,89 @@ export const apiService = {
     if (!isBackendUser()) {
       localStorage.setItem('IQRA_OBE_INSTRUCTOR_COURSES', JSON.stringify(courses));
     }
+    const run = () => this._saveChangedInstructorCourses(courses);
+    const result = instructorSaveChain.then(run, run);
+    instructorSaveChain = result.catch(() => undefined);
+    return result;
+  },
+
+  async _saveChangedInstructorCourses(courses: InstructorCourse[]): Promise<InstructorCourse[]> {
+    const pending = courses.map(c => {
+      const { updatedAt: _ignored, ...mapped } = mapInstructorCourseToBackend(c);
+      return { id: String(c.id), json: JSON.stringify(mapped), mapped };
+    }).filter(p => lastSentCourseJson.get(p.id) !== p.json);
+    if (pending.length === 0) return [];
+
+    const mappedCourses = pending.map(p => {
+      const version = courseVersions.get(p.id);
+      return version ? { ...p.mapped, updatedAt: version } : p.mapped;
+    });
+    const markSent = (saved: any[]) => {
+      const savedIds = new Set((saved || []).map((ic: any) => String(ic?.id)));
+      pending.forEach(p => { if (savedIds.has(p.id)) lastSentCourseJson.set(p.id, p.json); });
+    };
+
+    let response: Response;
     try {
-      const mappedCourses = courses.map(mapInstructorCourseToBackend);
       console.log('[DEBUG apiService.saveInstructorCourses] Sending payload to Django backend:', {
         url: `${BASE_URL}/instructor/courses/`,
         payload: { courses: mappedCourses }
       });
-      const response = await fetchWithTimeout(`${BASE_URL}/instructor/courses/`, {
+      response = await fetchWithTimeout(`${BASE_URL}/instructor/courses/`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ courses: mappedCourses }),
-      }, 8000);
-
-      if (response.status === 207) {
-        // Partial success — some courses saved, some failed.
-        // Use what was saved instead of throwing and losing everything.
-        const data = await response.json().catch(() => ({}));
-        if (data.errors?.length) {
-          console.warn('Some courses failed to sync:', data.errors);
-        }
-        return Array.isArray(data.courses) ? data.courses : courses;
-      }
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || errData.error || errData.message || 'Failed to save instructor courses on server');
-      }
-
-      const data = await response.json();
-      console.log('[DEBUG apiService.saveInstructorCourses] Received response from server:', data);
-      const resList = Array.isArray(data) ? data : (data.courses || courses);
-      if (Array.isArray(resList)) {
-        resList.forEach((ic: any) => {
-          const rawStuds = ic.students || ic.enrolled_students || ic.enrolledStudents || ic.student_list || ic.studentList || ic.enrolled_student_list || ic.enrolledStudentList || [];
-          if (Array.isArray(rawStuds)) {
-            ic.students = rawStuds.map((s: any) => {
-              const regNo = s.regNo || s.reg_no || s.registration_no || s.registrationNo || '';
-              const name = s.name || s.student_name || s.studentName || '';
-              const marks = s.student_marks || s.marks || s.obtained_marks || s.obtainedMarks || s.studentMarks || {};
-              return { regNo, reg_no: regNo, name, marks, student_marks: marks, studentMarks: marks };
-            });
-          }
-          ic.obe_marks = ic.obe_marks || ic.obeMarks || {};
-          ic.obeMarks = ic.obe_marks;
-        });
-      }
-      return resList;
+      }, 30000);
     } catch (err) {
+      // Timed out or offline: the server may still have saved, so its version
+      // is unknown. Drop it rather than wrongly refusing this tab's next save.
+      pending.forEach(p => courseVersions.delete(p.id));
       throw err;
     }
+
+    const hasStale = (errs: any) => Array.isArray(errs) && errs.some((e: any) => e && e.stale);
+
+    if (response.status === 207) {
+      // Partial success — some courses saved, some failed.
+      // Use what was saved instead of throwing and losing everything.
+      const data = await response.json().catch(() => ({}));
+      if (data.errors?.length) {
+        console.warn('Some courses failed to sync:', data.errors);
+      }
+      const saved = Array.isArray(data.courses) ? data.courses : [];
+      recordCourseVersions(saved);
+      markSent(saved);
+      if (hasStale(data.errors)) throw new Error(STALE_COURSE_MESSAGE);
+      return saved;
+    }
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      if (hasStale(errData.errors)) throw new Error(STALE_COURSE_MESSAGE);
+      throw new Error(errData.detail || errData.error || errData.message || 'Failed to save instructor courses on server');
+    }
+
+    const data = await response.json();
+    console.log('[DEBUG apiService.saveInstructorCourses] Received response from server:', data);
+    const resList = Array.isArray(data) ? data : (data.courses || []);
+    if (Array.isArray(resList)) {
+      recordCourseVersions(resList);
+      markSent(resList);
+      resList.forEach((ic: any) => {
+        const rawStuds = ic.students || ic.enrolled_students || ic.enrolledStudents || ic.student_list || ic.studentList || ic.enrolled_student_list || ic.enrolledStudentList || [];
+        if (Array.isArray(rawStuds)) {
+          ic.students = rawStuds.map((s: any) => {
+            const regNo = s.regNo || s.reg_no || s.registration_no || s.registrationNo || '';
+            const name = s.name || s.student_name || s.studentName || '';
+            const marks = s.student_marks || s.marks || s.obtained_marks || s.obtainedMarks || s.studentMarks || {};
+            return { regNo, reg_no: regNo, name, marks, student_marks: marks, studentMarks: marks };
+          });
+        }
+        ic.obe_marks = ic.obe_marks || ic.obeMarks || {};
+        ic.obeMarks = ic.obe_marks;
+      });
+    }
+    return resList;
   },
 
   async getStudents(): Promise<Student[]> {
@@ -1197,7 +1250,7 @@ export const apiService = {
 
   async getSemesterPlans(programId?: string) {
     const url = programId
-      ? `${BASE_URL}/admin/semester-plans/?programId=${programId}`
+      ? `${BASE_URL}/admin/semester-plans/?programId=${encodeURIComponent(programId)}`
       : `${BASE_URL}/admin/semester-plans/`;
     const res = await fetchWithTimeout(url, { headers: getHeaders() }, 20000);
     if (!res.ok) throw new Error('Failed to fetch semester plans');
@@ -1266,9 +1319,9 @@ export const apiService = {
   async getFinalResults(params: { regNo?: string; courseCode?: string; academicYear?: string }): Promise<{ results: any[] }> {
     let url = `${BASE_URL}/reports/final-results/`;
     const queryParams: string[] = [];
-    if (params.regNo) queryParams.push(`regNo=${params.regNo}`);
-    if (params.courseCode) queryParams.push(`courseCode=${params.courseCode}`);
-    if (params.academicYear) queryParams.push(`academicYear=${params.academicYear}`);
+    if (params.regNo) queryParams.push(`regNo=${encodeURIComponent(params.regNo)}`);
+    if (params.courseCode) queryParams.push(`courseCode=${encodeURIComponent(params.courseCode)}`);
+    if (params.academicYear) queryParams.push(`academicYear=${encodeURIComponent(params.academicYear)}`);
     if (queryParams.length > 0) {
       url += `?${queryParams.join('&')}`;
     }
@@ -1288,7 +1341,7 @@ export const apiService = {
   },
 
   async getProgramGAAttainment(programId: string) {
-    const res = await fetchWithTimeout(`${BASE_URL}/reports/program-ga-attainment/?programId=${programId.toLowerCase()}`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/reports/program-ga-attainment/?programId=${encodeURIComponent(programId.toLowerCase())}`, {
       headers: getHeaders()
     }, 5000);
     if (!res.ok) throw new Error('Failed to fetch program GA attainment');
@@ -1296,7 +1349,7 @@ export const apiService = {
   },
 
   async getStudentGAAttainment(regNo?: string) {
-    const url = regNo ? `${BASE_URL}/reports/student-ga-attainment/?regNo=${regNo}` : `${BASE_URL}/reports/student-ga-attainment/`;
+    const url = regNo ? `${BASE_URL}/reports/student-ga-attainment/?regNo=${encodeURIComponent(regNo)}` : `${BASE_URL}/reports/student-ga-attainment/`;
     const res = await fetchWithTimeout(url, {
       headers: getHeaders()
     }, 5000);
@@ -1305,7 +1358,7 @@ export const apiService = {
   },
 
   async getCourseAttainment(courseCode: string, programId: string) {
-    const res = await fetchWithTimeout(`${BASE_URL}/reports/course-attainment/?courseCode=${courseCode}&programId=${programId.toLowerCase()}`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/reports/course-attainment/?courseCode=${encodeURIComponent(courseCode)}&programId=${encodeURIComponent(programId.toLowerCase())}`, {
       headers: getHeaders()
     }, 5000);
     if (!res.ok) throw new Error('Failed to fetch course attainment');
@@ -1313,7 +1366,7 @@ export const apiService = {
   },
 
   async getStudentSummary(regNo?: string) {
-    const url = regNo ? `${BASE_URL}/reports/student-summary/?regNo=${regNo}` : `${BASE_URL}/reports/student-summary/`;
+    const url = regNo ? `${BASE_URL}/reports/student-summary/?regNo=${encodeURIComponent(regNo)}` : `${BASE_URL}/reports/student-summary/`;
     const res = await fetchWithTimeout(url, {
       headers: getHeaders()
     }, 5000);
@@ -1383,16 +1436,16 @@ export const apiService = {
   },
 
   async getCOAttainmentSummary(programId: string, semester?: string, academicYear?: string) {
-    let url = `${BASE_URL}/reports/co-attainment-summary/?programId=${programId}`;
-    if (semester) url += `&semester=${semester}`;
-    if (academicYear) url += `&academicYear=${academicYear}`;
+    let url = `${BASE_URL}/reports/co-attainment-summary/?programId=${encodeURIComponent(programId)}`;
+    if (semester) url += `&semester=${encodeURIComponent(semester)}`;
+    if (academicYear) url += `&academicYear=${encodeURIComponent(academicYear)}`;
     const res = await fetchWithTimeout(url, { headers: getHeaders() });
     return res.ok ? res.json() : null;
   },
 
   async getPOAttainment(programId: string) {
     const res = await fetchWithTimeout(
-      `${BASE_URL}/reports/po-attainment/?programId=${programId}`,
+      `${BASE_URL}/reports/po-attainment/?programId=${encodeURIComponent(programId)}`,
       { headers: getHeaders() }
     );
     return res.ok ? res.json() : null;
@@ -1400,36 +1453,36 @@ export const apiService = {
 
   async getGapAnalysis(programId: string) {
     const res = await fetchWithTimeout(
-      `${BASE_URL}/reports/gap-analysis/?programId=${programId}`,
+      `${BASE_URL}/reports/gap-analysis/?programId=${encodeURIComponent(programId)}`,
       { headers: getHeaders() }
     );
     return res.ok ? res.json() : null;
   },
 
   async getAtRiskStudents(programId: string, semester?: string) {
-    let url = `${BASE_URL}/reports/at-risk-students/?programId=${programId}`;
-    if (semester) url += `&semester=${semester}`;
+    let url = `${BASE_URL}/reports/at-risk-students/?programId=${encodeURIComponent(programId)}`;
+    if (semester) url += `&semester=${encodeURIComponent(semester)}`;
     const res = await fetchWithTimeout(url, { headers: getHeaders() });
     return res.ok ? res.json() : null;
   },
 
   async getInstructorPerformance(departmentId: string) {
     const res = await fetchWithTimeout(
-      `${BASE_URL}/reports/instructor-performance/?departmentId=${departmentId}`,
+      `${BASE_URL}/reports/instructor-performance/?departmentId=${encodeURIComponent(departmentId)}`,
       { headers: getHeaders() }
     );
     return res.ok ? res.json() : null;
   },
 
   async getCohortComparison(programId: string, gaId?: string) {
-    let url = `${BASE_URL}/reports/cohort-comparison/?programId=${programId}`;
-    if (gaId) url += `&gaId=${gaId}`;
+    let url = `${BASE_URL}/reports/cohort-comparison/?programId=${encodeURIComponent(programId)}`;
+    if (gaId) url += `&gaId=${encodeURIComponent(gaId)}`;
     const res = await fetchWithTimeout(url, { headers: getHeaders() });
     return res.ok ? res.json() : null;
   },
 
   async getProgramGAAttainmentBySemester(programId: string) {
-    const res = await fetchWithTimeout(`${BASE_URL}/reports/program-ga-attainment-by-semester/?programId=${programId.toLowerCase()}`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/reports/program-ga-attainment-by-semester/?programId=${encodeURIComponent(programId.toLowerCase())}`, {
       headers: getHeaders()
     }, 5000);
     if (!res.ok) {

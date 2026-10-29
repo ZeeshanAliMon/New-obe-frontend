@@ -948,8 +948,12 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
             backendInstructorCourses = apiService.getLocalInstructorCourses();
           }
 
+          // Same code AND same program only: an id substring match also hit
+          // other codes (CMC11 matched CMC111) and other programs' offerings.
+          const sameProgram = (pid?: string) =>
+            !course.programId || !pid || String(pid).trim().toLowerCase() === String(course.programId).trim().toLowerCase();
           const matchingInstructorCourses = backendInstructorCourses.filter(
-            ic => ic.code === course.code || ic.id.includes(course.code)
+            ic => ic.code === course.code && sameProgram(ic.programId)
           );
 
           // 2. Clear enrolled students from these instructor courses on the backend first
@@ -973,7 +977,7 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
           }
 
           // 4. Force remove all teacher assignments & predicted instructor courses
-          const matchingAssignments = teacherAssignments.filter(a => a.courseCode === course.code);
+          const matchingAssignments = teacherAssignments.filter(a => a.courseCode === course.code && sameProgram(a.programId));
           for (const assignment of matchingAssignments) {
             const teacherId = assignment.teacherId;
             const programId = assignment.programId;

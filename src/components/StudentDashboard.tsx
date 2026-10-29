@@ -2124,10 +2124,35 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
       });
     });
 
+    // GA attainment by questions passed (backend gaAttainments), summed over
+    // every course -- the same method as the QA "GA by Student" report. The CLO
+    // average above is only a fallback for responses without gaAttainments.
+    const byQuestions: Record<string, { passed: number; total: number; gaTitle: string; courses: Set<string> }> = {};
+    enrolledCoursesWithGrades.forEach((course: any) => {
+      if (!Array.isArray(course.gaAttainments)) return;
+      course.gaAttainments.forEach((g: any) => {
+        if (!g || !g.gaId || !(g.total > 0)) return;
+        const t = byQuestions[g.gaId] || (byQuestions[g.gaId] = { passed: 0, total: 0, gaTitle: g.gaTitle || g.gaId, courses: new Set() });
+        t.passed += Number(g.passed) || 0;
+        t.total += Number(g.total) || 0;
+        t.courses.add(`${course.code} - ${course.title || course.name || ''}`);
+      });
+    });
+    const useQuestions = enrolledCoursesWithGrades.some((c: any) => Array.isArray(c.gaAttainments));
+    if (useQuestions) {
+      Object.entries(byQuestions).forEach(([gaId, t]) => {
+        if (!gaMap[gaId]) gaMap[gaId] = { gaTitle: t.gaTitle, scores: [], courses: new Set() };
+        t.courses.forEach(c => gaMap[gaId].courses.add(c));
+      });
+      Object.keys(gaMap).forEach(gaId => { if (!byQuestions[gaId]) delete gaMap[gaId]; });
+    }
+
     const list = Object.entries(gaMap).map(([gaId, data]) => {
-      const avg = data.scores.length > 0 
-        ? data.scores.reduce((a, b) => a + b, 0) / data.scores.length 
-        : 0;
+      const avg = useQuestions
+        ? (byQuestions[gaId].passed / byQuestions[gaId].total) * 100
+        : data.scores.length > 0
+          ? data.scores.reduce((a, b) => a + b, 0) / data.scores.length
+          : 0;
 
       const origGA = findOriginalGA(gaId, gas);
 
@@ -2184,8 +2209,20 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
       if (!gaMap[gaId]) gaMap[gaId] = { gaTitle, scores: [] };
       gaMap[gaId].scores.push(Number(clo.percentage) || 0);
     });
+    // GA score by questions passed (backend gaAttainments), as on the QA and
+    // instructor screens; the CLO average is only a fallback.
+    const byQuestions: Record<string, any> = {};
+    if (Array.isArray(course.gaAttainments)) {
+      course.gaAttainments.forEach((g: any) => { if (g && g.gaId && g.total > 0) byQuestions[g.gaId] = g; });
+      Object.keys(byQuestions).forEach(gaId => {
+        if (!gaMap[gaId]) gaMap[gaId] = { gaTitle: byQuestions[gaId].gaTitle || gaId, scores: [] };
+      });
+      Object.keys(gaMap).forEach(gaId => { if (!byQuestions[gaId]) delete gaMap[gaId]; });
+    }
     const rows = Object.entries(gaMap).map(([gaId, data]) => {
-      const avg = data.scores.length ? data.scores.reduce((a, b) => a + b, 0) / data.scores.length : 0;
+      const avg = byQuestions[gaId]
+        ? Number(byQuestions[gaId].percent) || 0
+        : data.scores.length ? data.scores.reduce((a, b) => a + b, 0) / data.scores.length : 0;
       const origGA = findOriginalGA(gaId, gas);
       return {
         id: gaId,

@@ -208,3 +208,60 @@ export const computeCourseAggregate = (course: any, marks: Record<string, any> |
 
   return { aggregate, categoryContributions };
 };
+
+
+// ── GA attainment by questions passed ────────────────────────────────────────
+// Mirrors the backend (_ga_question_items / _ga_questions_passed) so every
+// screen shows the same GA numbers as the QA "GA by Course" report:
+//   * a question counts toward the GA of its FIRST mapped CLO;
+//   * only questions on weighted categories, within the category's unit
+//     count, are graded;
+//   * a question is passed at >= 50% of its marks (a single-question unit with
+//     no question mark uses the unit mark, as the mark sheet does);
+//   * GA attainment = questions passed / questions for that GA, attained at >= 50%.
+// Questions whose CLO has no GA are grouped under 'No GA'.
+export const GA_QUESTION_PASS_PCT = 50;
+export interface GAQuestionResult { passed: number; total: number; percent: number; attained: boolean }
+
+export const computeGAByQuestions = (
+  course: any,
+  student: any,
+  cloToGA: (cloCode: string) => string | null | undefined
+): Record<string, GAQuestionResult> => {
+  const out: Record<string, GAQuestionResult> = {};
+  if (!course || !student) return out;
+  const regNo = String(student.regNo || student.reg_no || '');
+  const obeAll = course.obeMarks || course.obe_marks || {};
+  const obeKey = Object.keys(obeAll).find(k => k === regNo) ||
+    Object.keys(obeAll).find(k => k.trim().toLowerCase() === regNo.trim().toLowerCase());
+  const obeRow: Record<string, number> = (obeKey ? obeAll[obeKey] : null) || {};
+  const marks: Record<string, number> = student.marks || student.student_marks || {};
+  (course.categories || []).forEach((cat: any) => {
+    if (!(Number(cat.percentage) > 0)) return;
+    (course.unitsData?.[cat.name] || []).forEach((unit: any) => {
+      if (!(unit.unitNo <= cat.units)) return;
+      const qs = (unit.questions || []).filter((q: any) => q && q.id);
+      qs.forEach((q: any) => {
+        const clo = (q.mappedCLOs || [])[0];
+        const ga = clo ? cloToGA(String(clo).trim().toUpperCase()) : null;
+        const key = ga || 'No GA';
+        let val: any = obeRow[q.id];
+        if (val === undefined) val = marks[`q-${cat.name}-${unit.unitNo}-${q.id}`];
+        if ((val === undefined || val === null || Number(val) <= 0) && qs.length === 1) {
+          const unitMark = marks[`${cat.name}-${unit.unitNo}`];
+          if (unitMark !== undefined) val = unitMark;
+        }
+        const maxMarks = Number(q.maxMarks) || 0;
+        const ok = maxMarks > 0 && ((Number(val) || 0) / maxMarks) * 100 >= GA_QUESTION_PASS_PCT;
+        const r = out[key] || (out[key] = { passed: 0, total: 0, percent: 0, attained: false });
+        r.total += 1;
+        if (ok) r.passed += 1;
+      });
+    });
+  });
+  Object.values(out).forEach(r => {
+    r.percent = Math.round((r.passed / r.total) * 1000) / 10;
+    r.attained = r.percent >= GA_QUESTION_PASS_PCT;
+  });
+  return out;
+};

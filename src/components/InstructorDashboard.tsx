@@ -50,7 +50,7 @@ import html2pdf from 'html2pdf.js';
 import { HBarChart, CountColumnChart, CHART } from './charts/ReportCharts';
 import { toJpeg } from 'html-to-image';
 import { jsPDF } from 'jspdf';
-import { DEFAULT_CUSTOM_GRADES, getLetterGrade, parsePercentRange, getCourseLetterGrade, computeCourseAggregate } from '../utils/grading';
+import { DEFAULT_CUSTOM_GRADES, getLetterGrade, parsePercentRange, getCourseLetterGrade, computeCourseAggregate, computeGAByQuestions } from '../utils/grading';
 
 const areRegNosEqual = (reg1: string | null | undefined, reg2: string | null | undefined): boolean => {
   if (!reg1 || !reg2) return false;
@@ -982,6 +982,9 @@ const MarksheetDocument = ({
     if (b === 'No GA') return -1;
     return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
   });
+  // CLO code -> GA, for GA attainment by questions passed.
+  const cloToGAForSheet = (clo: string) =>
+    cloListToUse.find(c => String(c.code).trim().toUpperCase() === clo)?.mappedGA || null;
 
   interface CLOAssessment {
     id: string;
@@ -1128,7 +1131,10 @@ const MarksheetDocument = ({
     .map(ga => {
       const clos = (gaToCLOsMap[ga] || []).filter(c => (cloAssessments[c.code] || []).length > 0);
       if (clos.length === 0) return null;
-      const scores = course.students.map(st => clos.reduce((a, c) => a + cloScoreFor(st, c.code), 0) / clos.length);
+      // GA by questions passed (same rule as the GA Total column and QA reports)
+      const gaResults = course.students.map(st => computeGAByQuestions(course, st, cloToGAForSheet)[ga]);
+      if (!gaResults.some(Boolean)) return null;
+      const scores = gaResults.map(r => (r ? r.percent : 0));
       const attained = scores.filter(sc => sc >= GA_ATTAIN_PCT).length;
       return {
         ga, label: formatGACodeToStandard(ga), clos: clos.map(c => c.code), attained,
@@ -1189,6 +1195,13 @@ const MarksheetDocument = ({
           .no-print-break {
             page-break-inside: avoid;
             break-inside: avoid;
+          }
+          /* Landscape CLO/GA sheets fill the page width; the screen spacing
+             (3rem margin + 3rem padding) above the signatures was enough to push
+             them alone onto a second page. Keep them compact in print. */
+          .print-signature-block {
+            margin-top: 6mm !important;
+            padding-top: 4mm !important;
           }
           /* The student ledger is taller than one page on any real class, so it
              must be allowed to flow across pages. It previously sat inside a
@@ -1611,9 +1624,8 @@ const MarksheetDocument = ({
                             })}
                             {/* GA Total % column */}
                             {(() => {
-                              const gaTotalScore = cloTotalScores.length > 0 
-                                ? cloTotalScores.reduce((sum, score) => sum + score, 0) / cloTotalScores.length
-                                : 0;
+                              // GA by questions passed (same rule as the QA reports)
+                              const gaTotalScore = computeGAByQuestions(course, item.student, cloToGAForSheet)[gaCode]?.percent ?? 0;
                               return (
                                 <td 
                                   className="border-r border-black text-center font-black font-sans ga-highlight-cell"
@@ -2012,7 +2024,7 @@ const MarksheetDocument = ({
       )}
 
       {/* Signature & Attestation Panel Block */}
-      <div className="mt-12 flex flex-col sm:flex-row justify-between items-end gap-12 text-[10px] font-sans pt-12 border-t border-dashed border-slate-350 no-print-break">
+      <div className="mt-12 flex flex-col sm:flex-row justify-between items-end gap-12 text-[10px] font-sans pt-12 border-t border-dashed border-slate-350 no-print-break print-signature-block">
         <div className="text-center w-52">
           <p className="font-extrabold font-mono text-[11px] text-slate-850 border-b border-black pb-1 uppercase select-all">
             {instructor}
@@ -7695,34 +7707,24 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                           });
 
                           // Calculate GA averages & attainment rate for class
+                          // GA by questions passed (same rule as the QA "GA by Course" report)
+                          const cloToGA = (clo: string) =>
+                            cloListToRender.find(c => String(c.code).trim().toUpperCase() === clo)?.mappedGA || null;
+                          const gaByStudent: Record<string, ReturnType<typeof computeGAByQuestions>> = {};
+                          students.forEach(std => { gaByStudent[std.regNo] = computeGAByQuestions(selectedCourse, std, cloToGA); });
                           const gaPerformance = sortedGAs.map(gaCode => {
                             const clos = gaToCLOsMap[gaCode] || [];
-                            let totalClassMax = 0;
-                            let totalClassObs = 0;
+                            let pctSum = 0;
+                            let assessed = 0;
                             let attainedStudentsCount = 0;
-
                             students.forEach(std => {
-                              let stdMax = 0;
-                              let stdObs = 0;
-                              clos.forEach(cloObj => {
-                                const cloQs = qs.filter(q => q.mappedCLOs.includes(cloObj.code));
-                                cloQs.forEach(q => {
-                                  stdMax += q.maxMarks;
-                                  stdObs += marks[std.regNo]?.[q.id] ?? 0;
-                                });
-                              });
-
-                              if (stdMax > 0) {
-                                const stdPct = (stdObs / stdMax) * 100;
-                                if (stdPct >= 50) {
-                                  attainedStudentsCount++;
-                                }
-                              }
-                              totalClassMax += stdMax;
-                              totalClassObs += stdObs;
+                              const r = gaByStudent[std.regNo]?.[gaCode];
+                              if (!r) return;
+                              assessed++;
+                              pctSum += r.percent;
+                              if (r.attained) attainedStudentsCount++;
                             });
-
-                            const classAvgPct = totalClassMax > 0 ? (totalClassObs / totalClassMax) * 100 : 0;
+                            const classAvgPct = assessed > 0 ? pctSum / assessed : 0;
                             const attainmentRatePct = students.length > 0 ? (attainedStudentsCount / students.length) * 100 : 0;
 
                             return {
@@ -7830,19 +7832,9 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                                             <td className="py-2.5 px-4 font-bold text-indigo-950">{student.regNo}</td>
                                             <td className="py-2.5 px-3 border-r border-slate-200 text-slate-900 font-sans font-semibold">{student.name}</td>
                                             {sortedGAs.map(gaCode => {
-                                              const clos = gaToCLOsMap[gaCode] || [];
-                                              let stdMax = 0;
-                                              let stdObs = 0;
-                                              clos.forEach(cloObj => {
-                                                const cloQs = qs.filter(q => q.mappedCLOs.includes(cloObj.code));
-                                                cloQs.forEach(q => {
-                                                  stdMax += q.maxMarks;
-                                                  stdObs += marks[student.regNo]?.[q.id] ?? 0;
-                                                });
-                                              });
-
-                                              const pctVal = stdMax > 0 ? (stdObs / stdMax) * 100 : null;
-                                              const attained = pctVal !== null ? pctVal >= 50 : false;
+                                              const r = gaByStudent[student.regNo]?.[gaCode];
+                                              const pctVal = r ? r.percent : null;
+                                              const attained = r ? r.attained : false;
                                               if (pctVal !== null) {
                                                 gaTotalCount++;
                                                 if (attained) gaAttainedCount++;
