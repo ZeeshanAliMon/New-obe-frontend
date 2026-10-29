@@ -918,7 +918,9 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
               departmentId: parsedUser.departmentId || parsedUser.department_id || '',
               programId: parsedUser.programId || parsedUser.program_id || '',
               batch: parsedDetails?.batch || parsedUser.batch || 'SP23',
-              semester: parsedDetails?.semester || parsedUser.semester || '7th'
+              // Admission's semester (sent at login) is the real one; the reg-number
+              // guess is only a fallback for logins from older backends.
+              semester: parsedUser.semester || parsedDetails?.semester || '7th'
             };
           }
         } catch (e) {
@@ -1366,9 +1368,8 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
 
   // Extract semester from course code dynamically (e.g. CMC111 -> 1st Semester, SEN212 -> 2nd Semester)
   const getCourseSemester = (courseCode: string, courseObj?: any): string => {
-    if (courseObj && (courseObj.academicYear || courseObj.academic_year)) {
-      return courseObj.academicYear || courseObj.academic_year;
-    }
+    // The course's own semester (from the semester plan) comes first, so each
+    // semester's courses are grouped together; the academic year is a fallback.
     if (courseObj && courseObj.semester) {
       const s = String(courseObj.semester).trim();
       if (s) {
@@ -1377,6 +1378,9 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
         }
         return s;
       }
+    }
+    if (courseObj && (courseObj.academicYear || courseObj.academic_year)) {
+      return courseObj.academicYear || courseObj.academic_year;
     }
 
     // 1. Use the active student's semester if available, so current enrolled courses align with their current active semester!
@@ -1884,7 +1888,9 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
     // 1. Add finalTranscripts (historical finalized records)
     finalTranscripts.forEach(t => {
       // Clean up semester key name (e.g., "1st Semester" instead of "SPRING-23")
-      const sem = t.semester || '1st Semester';
+      // Same key as the enrolled courses below ("1st Semester"), so a closed
+      // course isn't listed twice under "1st" and "1st Semester".
+      const sem = t.semester ? getCourseSemester(t.courseCode, { semester: t.semester }) : '1st Semester';
       if (!grouped[sem]) grouped[sem] = [];
       
       if (!grouped[sem].some(c => c.code === t.courseCode)) {
