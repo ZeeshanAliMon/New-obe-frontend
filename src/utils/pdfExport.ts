@@ -1,6 +1,10 @@
 import { toCanvas } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 
+/** Elements marked with this class (e.g. download buttons) are left out of every export. */
+export const PDF_EXCLUDE_CLASS = 'pdf-exclude';
+export const excludeFromExport = (node: HTMLElement) => !node.classList?.contains(PDF_EXCLUDE_CLASS);
+
 /**
  * Export a rendered DOM element to a multi-page A4 portrait PDF.
  *
@@ -60,6 +64,7 @@ export async function exportElementToPdf(element: HTMLElement, filename: string)
       backgroundColor: '#ffffff',
       width: renderWidth,
       height: totalHeight,
+      filter: excludeFromExport,
     });
 
     const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true });
@@ -103,4 +108,55 @@ export async function exportElementToPdf(element: HTMLElement, filename: string)
       else element.style.removeProperty(prop);
     });
   }
+}
+
+/**
+ * Export several elements as a PDF with exactly one element per page (used by
+ * the CLO CQI report: one course offering per page). Each element is laid out
+ * at `renderWidth` px, then scaled to fit the page — shrunk further if it is
+ * too tall, so nothing is cut off. `onProgress(done, total)` lets the caller
+ * show progress on long exports.
+ */
+export async function exportPagesToPdf(
+  elements: HTMLElement[],
+  filename: string,
+  { orientation = 'l', renderWidth = 1100, onProgress }: { orientation?: 'p' | 'l'; renderWidth?: number; onProgress?: (done: number, total: number) => void } = {},
+): Promise<void> {
+  const pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4', compress: true });
+  const MARGIN = 8;
+  const pageW = orientation === 'l' ? 297 : 210;
+  const pageH = orientation === 'l' ? 210 : 297;
+  const maxW = pageW - MARGIN * 2;
+  const maxH = pageH - MARGIN * 2;
+
+  for (let i = 0; i < elements.length; i++) {
+    const el = elements[i];
+    const savedWidth = [el.style.getPropertyValue('width'), el.style.getPropertyPriority('width')] as const;
+    const savedMaxWidth = [el.style.getPropertyValue('max-width'), el.style.getPropertyPriority('max-width')] as const;
+    try {
+      el.style.setProperty('width', `${renderWidth}px`, 'important');
+      el.style.setProperty('max-width', 'none', 'important');
+      void el.offsetHeight;
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      const w = Math.ceil(el.scrollWidth);
+      const h = Math.ceil(el.scrollHeight);
+      const canvas = await toCanvas(el, { pixelRatio: 2, backgroundColor: '#ffffff', width: w, height: h, filter: excludeFromExport });
+
+      const scale = Math.min(maxW / w, maxH / h);
+      const imgW = w * scale;
+      const imgH = h * scale;
+      if (i > 0) pdf.addPage();
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', (pageW - imgW) / 2, MARGIN, imgW, imgH, undefined, 'FAST');
+      pdf.setFontSize(7);
+      pdf.setTextColor(120);
+      pdf.text(`Page : ${i + 1}`, pageW / 2, pageH - 3, { align: 'center' });
+    } finally {
+      if (savedWidth[0]) el.style.setProperty('width', savedWidth[0], savedWidth[1]); else el.style.removeProperty('width');
+      if (savedMaxWidth[0]) el.style.setProperty('max-width', savedMaxWidth[0], savedMaxWidth[1]); else el.style.removeProperty('max-width');
+    }
+    onProgress?.(i + 1, elements.length);
+  }
+
+  pdf.save(filename);
 }

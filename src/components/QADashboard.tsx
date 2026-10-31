@@ -1,7 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ChartCard, HBarChart, DonutChart, HeatmapChart, GroupedColumnChart, StackedBarChart, CHART } from './charts/ReportCharts';
+import { ChartCard, HBarChart, DonutChart, CHART } from './charts/ReportCharts';
 import { Department, Program, GA, OBEData, ProgramObjective, Course } from '../types';
 import { apiService } from '../services/apiService';
+import CloCqiReport from './CloCqiReport';
+import GaBatchReport from './GaBatchReport';
+import StudentGaTranscript from './StudentGaTranscript';
+import ProgramGaReport from './ProgramGaReport';
+import CourseCloReport from './CourseCloReport';
+import { CoSummaryReport, PoAttainmentReport, AtRiskReport, InstructorPerformanceReport, GapAnalysisReport, CohortComparisonReport } from './QaReports';
 import { 
   Check, 
   Settings, 
@@ -97,22 +103,23 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
   const [isEditingPoInline, setIsEditingPoInline] = useState<boolean>(false);
 
   // More Reports state
-  const [moreReportType, setMoreReportType] = useState<'ga_program' | 'ga_batch' | 'ga_course' | 'ga_student' | 'clo_attainment' | 'po_attainment' | 'co_summary' | 'at_risk' | 'gap_analysis' | 'instructor_performance' | 'cohort_comparison'>('ga_program');
+  const [moreReportType, setMoreReportType] = useState<'ga_program' | 'ga_batch' | 'ga_course' | 'ga_student' | 'clo_attainment' | 'po_attainment' | 'co_summary' | 'at_risk' | 'gap_analysis' | 'instructor_performance' | 'cohort_comparison' | 'clo_cqi'>('ga_program');
   const [moreReportProgramId, setMoreReportProgramId] = useState<string>('');
   const [moreReportBatch, setMoreReportBatch] = useState<string>('');
   const [moreReportSemester, setMoreReportSemester] = useState<string>('');
   const [gaCourseOfferingIdx, setGaCourseOfferingIdx] = useState<number>(0);
   const [moreReportRegNo, setMoreReportRegNo] = useState<string>('');
   const [moreReportStudentSearch, setMoreReportStudentSearch] = useState<string>('');
+  // CLO Attainment by Course: offerings (term + instructor) of the chosen course
+  const [moreReportOfferings, setMoreReportOfferings] = useState<{ id: number; academicYear: string; instructorId: number; instructor: string }[]>([]);
+  const [moreReportTerm, setMoreReportTerm] = useState<string>('');
+  const [moreReportInstructorId, setMoreReportInstructorId] = useState<string>('');
   // Pass mark for the Reports page: use the threshold the report itself returns
   // (attainmentThreshold / threshold), falling back to the backend default of 50%.
   const reportThreshold = (d: any): number => {
     const t = Number(d?.attainmentThreshold ?? d?.threshold);
     return Number.isFinite(t) && t > 0 ? t : 50;
   };
-  // CLO attainment %: course-attainment sends `attainmentPercentage`,
-  // co-attainment-summary sends `attainmentPercent`.
-  const cloPct = (c: any): number => Number(c?.attainmentPercentage ?? c?.attainmentPercent ?? 0);
   // Show program-scoped GA ids ("BSCS1", "BSAI3") as "GA1", "GA3" — the same
   // label the Instructor and Student dashboards use (formatGACodeToStandard).
   const gaNum = (id: any): number => { const m = String(id ?? '').match(/\d+/); return m ? parseInt(m[0], 10) : 9999; };
@@ -304,6 +311,25 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
       .then(list => { if (Array.isArray(list)) setStudents(list); })
       .catch(err => console.warn('Failed to load students for batch list:', err));
   }, [activeModule, moreReportType, students.length]);
+
+  // Term / Instructor pickers for CLO Attainment by Course; default to the latest term.
+  useEffect(() => {
+    setMoreReportOfferings([]);
+    setMoreReportTerm('');
+    setMoreReportInstructorId('');
+    if (moreReportType !== 'clo_attainment' || !moreReportCourseCode) return;
+    const BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'https://zeeshanbalti.pythonanywhere.com/api';
+    const params = new URLSearchParams({ courseCode: moreReportCourseCode, offeringsOnly: '1' });
+    if (moreReportProgramId) params.set('programId', moreReportProgramId);
+    fetch(`${BASE}/reports/course-attainment/?${params}`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('access') || ''}` } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(res => {
+        const list = Array.isArray(res?.offerings) ? res.offerings : [];
+        setMoreReportOfferings(list);
+        if (list.length) setMoreReportTerm(list[list.length - 1].academicYear || '');
+      })
+      .catch(err => console.warn('Failed to load course offerings:', err));
+  }, [moreReportType, moreReportCourseCode, moreReportProgramId]);
 
   // Filtered definitions of GAs matching selected program securely
   const filteredGAs = useMemo(() => {
@@ -1847,6 +1873,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                       { id: 'gap_analysis',          label: 'Curriculum\nGap Analysis',         icon: <GitBranch className="w-5 h-5" />,      color: 'orange' },
                       { id: 'instructor_performance',label: 'Instructor\nPerformance',          icon: <UserCheck className="w-5 h-5" />,      color: 'rose' },
                       { id: 'cohort_comparison',     label: 'Cohort\nComparison',               icon: <TrendingUp className="w-5 h-5" />,     color: 'green' },
+                      { id: 'clo_cqi',               label: 'CLO CQI\n(Instructor-wise)',       icon: <BarChart2 className="w-5 h-5" />,      color: 'indigo' },
                     ].map(rt => (
                       <button
                         key={rt.id}
@@ -1863,7 +1890,8 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                     ))}
                   </div>
 
-                {/* Filters (same card) */}
+                {/* Filters (same card) — CLO CQI has its own filter bar below */}
+                {moreReportType !== 'clo_cqi' && (
                 <div className="mt-4 pt-4 border-t border-slate-100">
                   <div className="flex flex-wrap gap-4 items-end">
 
@@ -1992,6 +2020,40 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                       </div>
                     )}
 
+                    {/* Term + Instructor of the chosen course */}
+                    {['clo_attainment'].includes(moreReportType) && moreReportCourseCode && (() => {
+                      const terms: string[] = Array.from(new Set(moreReportOfferings.map(o => o.academicYear).filter(Boolean)));
+                      const insts = moreReportOfferings
+                        .filter(o => !moreReportTerm || o.academicYear === moreReportTerm)
+                        .filter((o, i, arr) => arr.findIndex(x => x.instructorId === o.instructorId) === i);
+                      return (
+                        <>
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Term</label>
+                            <select
+                              value={moreReportTerm}
+                              onChange={e => { setMoreReportTerm(e.target.value); setMoreReportInstructorId(''); setMoreReportData(null); }}
+                              className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[130px]"
+                            >
+                              <option value="">All Terms</option>
+                              {terms.map(t => <option key={t} value={t}>{t.replace(/[-_]/g, ' ')}</option>)}
+                            </select>
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Instructor</label>
+                            <select
+                              value={moreReportInstructorId}
+                              onChange={e => { setMoreReportInstructorId(e.target.value); setMoreReportData(null); }}
+                              className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[160px]"
+                            >
+                              <option value="">{insts.length === 1 ? insts[0].instructor : 'All Instructors'}</option>
+                              {insts.length > 1 && insts.map(o => <option key={o.instructorId} value={String(o.instructorId)}>{o.instructor}</option>)}
+                            </select>
+                          </div>
+                        </>
+                      );
+                    })()}
+
                     {/* Department for instructor performance */}
                     {['instructor_performance'].includes(moreReportType) && (
                       <div className="flex flex-col gap-1">
@@ -2063,6 +2125,8 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                             if (!moreReportCourseCode) throw new Error('Please select a course.');
                             const params = new URLSearchParams({ courseCode: moreReportCourseCode });
                             if (moreReportProgramId) params.set('programId', moreReportProgramId);
+                            if (moreReportTerm) params.set('academicYear', moreReportTerm);
+                            if (moreReportInstructorId) params.set('instructorId', moreReportInstructorId);
                             result = await get(`/reports/course-attainment/?${params}`);
                           } else if (moreReportType === 'co_summary') {
                             if (!moreReportProgramId) throw new Error('Please select a programme.');
@@ -2107,10 +2171,19 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                     </button>
                   </div>
                 </div>
+                )}
                 </div>
 
+                {moreReportType === 'clo_cqi' && (
+                  <CloCqiReport
+                    departmentId={activeDeptId}
+                    departmentName={activeDepartment?.name}
+                    programs={data?.programs || []}
+                  />
+                )}
+
                 {/* Error */}
-                {moreReportError && (
+                {moreReportType !== 'clo_cqi' && moreReportError && (
                   <div className="bg-red-50 border border-red-200 rounded-2xl px-5 py-4 flex items-start gap-3">
                     <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
                     <div>
@@ -2121,7 +2194,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                 )}
 
                 {/* Results */}
-                {moreReportData && !moreReportLoading && (
+                {moreReportType !== 'clo_cqi' && moreReportData && !moreReportLoading && (
                   <div className="qa-print-area bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
 
                     {/* Print button */}
@@ -2138,8 +2211,18 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                       </button>
                     </div>
 
-                    {/* GA Program / Batch / Semester attainment */}
-                    {(moreReportType === 'ga_program' || moreReportType === 'ga_batch') && moreReportData.attributes && (
+                    {/* GA by Program: GA-wise course report + summary + summary chart */}
+                    {moreReportType === 'ga_program' && moreReportData.attributes && (
+                      <ProgramGaReport data={moreReportData} labelOf={gaLabel} />
+                    )}
+
+                    {/* GA by Batch: per-student progress table + separate chart */}
+                    {moreReportType === 'ga_batch' && moreReportData.students && (
+                      <GaBatchReport data={moreReportData} labelOf={gaLabel} />
+                    )}
+
+                    {/* GA by Batch from a backend without the per-student matrix */}
+                    {moreReportType === 'ga_batch' && !moreReportData.students && moreReportData.attributes && (
                       <div className="space-y-3">
                         <div className="flex gap-3 flex-wrap text-xs">
                           {moreReportData.programName && <span className="bg-indigo-100 text-indigo-800 font-bold px-3 py-1 rounded-full">{moreReportData.programName}</span>}
@@ -2204,101 +2287,10 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                       </div>
                     )}
 
-                    {/* GA Attainment by Student */}
-                    {moreReportType === 'ga_student' && Array.isArray(moreReportData.gas) && Array.isArray(moreReportData.courses) && (() => {
-                      const gasS: any[] = moreReportData.gas;
-                      const coursesS: any[] = moreReportData.courses;
-                      const attainedN = gasS.filter(g => g.attained).length;
-                      const gaCols = gasS.map(g => g.id);
-                      return (
-                        <div className="space-y-4">
-                          <div className="flex gap-2 flex-wrap items-center text-xs">
-                            <span className="bg-indigo-100 text-indigo-800 font-bold px-3 py-1 rounded-full">{moreReportData.regNo} — {moreReportData.name}</span>
-                            <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{coursesS.length} course{coursesS.length === 1 ? '' : 's'}</span>
-                            <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{attainedN} of {gasS.length} GAs attained{gasS.length ? ` (${Math.round(attainedN / gasS.length * 100)}%)` : ''}</span>
-                            <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">Question passed at ≥ {moreReportData.questionPassThreshold ?? 50}% · GA attained at ≥ {moreReportData.gaAttainmentThreshold ?? 50}%</span>
-                          </div>
-
-                          {gasS.length === 0 ? (
-                            <p className="text-xs text-slate-500">None of this student's course questions are mapped (through a CLO) to a GA yet.</p>
-                          ) : (
-                            <>
-                              <ChartCard title="GA attainment across all courses" subtitle="Questions passed ÷ questions mapped to the GA, over every course the student is enrolled in">
-                                <HBarChart threshold={moreReportData.gaAttainmentThreshold ?? 50} passLabel="Attained" failLabel="Not attained"
-                                  items={gasS.map(g => ({ label: gaLabel(g.id), detail: g.title, value: g.percent, pass: g.attained, extra: [`${g.passed} of ${g.total} questions passed`, `${g.courseCount} course${g.courseCount === 1 ? '' : 's'}`] }))} />
-                              </ChartCard>
-
-                              <table className="w-full border-collapse text-xs">
-                                <thead>
-                                  <tr className="bg-slate-50 border-b border-slate-200">
-                                    <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">GA</th>
-                                    <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Title</th>
-                                    <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Questions Passed</th>
-                                    <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Attainment</th>
-                                    <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Courses</th>
-                                    <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Status</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {gasS.map(g => (
-                                    <tr key={g.id} className="border-b border-slate-100 hover:bg-slate-50">
-                                      <td className="px-3 py-2 font-black text-indigo-700">{gaLabel(g.id)}</td>
-                                      <td className="px-3 py-2 text-slate-700">{g.title}</td>
-                                      <td className="px-3 py-2 text-center">{g.passed} / {g.total}</td>
-                                      <td className="px-3 py-2 text-center font-bold">{Number(g.percent).toFixed(1)}%</td>
-                                      <td className="px-3 py-2 text-center text-slate-500">{g.courseCount}</td>
-                                      <td className="px-3 py-2 text-center">
-                                        <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${g.attained ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{g.attained ? 'Attained' : 'Not Attained'}</span>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </>
-                          )}
-
-                          {coursesS.length > 0 && (
-                            <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                              <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
-                                <span className="text-xs font-black text-slate-700">By course</span>
-                                <span className="text-[10px] text-slate-500">questions passed / questions for the GA in that course</span>
-                              </div>
-                              <div className="max-h-[420px] overflow-auto">
-                                <table className="w-full text-xs">
-                                  <thead className="sticky top-0 bg-white shadow-sm">
-                                    <tr className="border-b border-slate-200">
-                                      <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Course</th>
-                                      <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Term</th>
-                                      {gaCols.map(g => <th key={g} className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">{gaLabel(g)}</th>)}
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {coursesS.map((c, i) => (
-                                      <tr key={`${c.courseCode}-${c.academicYear}-${i}`} className="border-b border-slate-50 hover:bg-slate-50">
-                                        <td className="px-3 py-1.5 text-slate-700"><span className="font-mono font-bold">{c.courseCode}</span> {c.courseTitle}</td>
-                                        <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">{c.academicYear || '—'}</td>
-                                        {gaCols.map(g => {
-                                          const v = c.gas?.[g];
-                                          return (
-                                            <td key={g} className="px-3 py-1.5 text-center" title={v ? `${v.passed} of ${v.total} questions passed` : ''}>
-                                              {v ? (
-                                                <span className={`inline-block min-w-[64px] px-2 py-0.5 rounded-full font-bold text-[10px] ${v.attained ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                                  {v.passed}/{v.total} · {Math.round(v.percent)}%
-                                                </span>
-                                              ) : <span className="text-slate-300">—</span>}
-                                            </td>
-                                          );
-                                        })}
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
+                    {/* GA Attainment by Student: GA transcript + summary + summary chart */}
+                    {moreReportType === 'ga_student' && Array.isArray(moreReportData.gas) && Array.isArray(moreReportData.courses) && (
+                      <StudentGaTranscript data={moreReportData} labelOf={gaLabel} />
+                    )}
 
                     {/* GA Attainment by Course (students) */}
                     {moreReportType === 'ga_course' && Array.isArray(moreReportData.offerings) && (() => {
@@ -2430,419 +2422,24 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                       );
                     })()}
 
-                    {/* CLO Attainment by Course */}
+                    {/* CLO Attainment by Course: CLO table + chart */}
                     {moreReportType === 'clo_attainment' && moreReportData.clos && (
-                      <div className="space-y-3">
-                        <div className="flex gap-3 flex-wrap text-xs">
-                          <span className="bg-blue-100 text-blue-800 font-bold px-3 py-1 rounded-full">{moreReportData.courseCode} — {moreReportData.courseTitle}</span>
-                          {moreReportData.classSize != null && <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{moreReportData.classSize} Students</span>}
-                          <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">Threshold: {reportThreshold(moreReportData)}%</span>
-                        </div>
-                        {(() => {
-                          const clos: any[] = moreReportData.clos;
-                          const passed = clos.filter(c => cloPct(c) >= reportThreshold(moreReportData)).length;
-                          return (
-                            <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
-                              <ChartCard title="Attainment by CLO" subtitle="Percentage of students attaining each CLO">
-                                <HBarChart
-                                  threshold={reportThreshold(moreReportData)}
-                                  passLabel="Passed" failLabel="Needs Work"
-                                  items={clos.map(c => ({ label: String(c.code), detail: c.description, value: cloPct(c), pass: cloPct(c) >= reportThreshold(moreReportData), extra: [`Mapped GA: ${c.mappedGA ? gaLabel(c.mappedGA) : '—'}`, `Passed: ${c.passedCount ?? '—'} / ${c.totalCount ?? '—'}`] }))}
-                                />
-                              </ChartCard>
-                              <ChartCard title="CLO status" subtitle="Number of CLOs by status">
-                                <DonutChart centerLabel="CLOs" slices={[
-                                  { label: 'Passed', value: passed, color: CHART.good },
-                                  { label: 'Needs Work', value: clos.length - passed, color: CHART.critical },
-                                ]} />
-                              </ChartCard>
-                            </div>
-                          );
-                        })()}
-                        <table className="w-full border-collapse text-xs">
-                          <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200">
-                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">CLO</th>
-                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Description</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Mapped GA</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Attainment %</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Passed</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {moreReportData.clos.map((clo: any, i: number) => (
-                              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
-                                <td className="px-3 py-2 font-black text-blue-700">{clo.code}</td>
-                                <td className="px-3 py-2 text-slate-600">{clo.description}</td>
-                                <td className="px-3 py-2 text-center">
-                                  <span className="bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full text-[10px]">{clo.mappedGA ? gaLabel(clo.mappedGA) : '—'}</span>
-                                </td>
-                                <td className="px-3 py-2 text-center font-bold">{cloPct(clo).toFixed(1)}%</td>
-                                <td className="px-3 py-2 text-center text-slate-500">{clo.passedCount ?? '—'} / {clo.totalCount ?? '—'}</td>
-                                <td className="px-3 py-2 text-center">
-                                  <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${cloPct(clo) >= reportThreshold(moreReportData) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                    {cloPct(clo) >= reportThreshold(moreReportData) ? 'Passed' : 'Needs Work'}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      <CourseCloReport data={moreReportData} gaLabel={gaLabel} />
                     )}
 
-                    {/* CO Attainment Summary */}
-                    {moreReportType === 'co_summary' && moreReportData.courses && (
-                      <div className="space-y-3">
-                        <div className="flex gap-3 flex-wrap text-xs">
-                          <span className="bg-sky-100 text-sky-800 font-bold px-3 py-1 rounded-full">{moreReportData.programId?.toUpperCase()}</span>
-                          {moreReportData.semester && <span className="bg-slate-100 text-slate-700 font-bold px-3 py-1 rounded-full">{moreReportData.semester} Semester</span>}
-                        </div>
-                        {(() => {
-                          const courses: any[] = moreReportData.courses;
-                          const allClos = courses.flatMap(c => c.clos || []);
-                          const passed = allClos.filter((c: any) => cloPct(c) >= reportThreshold(moreReportData)).length;
-                          const avg = (c: any) => (c.clos || []).length ? (c.clos || []).reduce((a: number, x: any) => a + cloPct(x), 0) / (c.clos || []).length : null;
-                          return (
-                            <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
-                              <ChartCard title="Average CLO attainment by course" subtitle="Mean of each course's CLO attainment">
-                                <HBarChart
-                                  threshold={reportThreshold(moreReportData)}
-                                  passLabel={`At / above ${reportThreshold(moreReportData)}%`} failLabel={`Below ${reportThreshold(moreReportData)}%`}
-                                  items={courses.map(c => { const v = avg(c); return { label: String(c.courseCode), detail: c.courseTitle, value: v, pass: v != null && v >= reportThreshold(moreReportData), extra: [`${(c.clos || []).length} CLOs`] }; })}
-                                />
-                              </ChartCard>
-                              <ChartCard title="CLO status across courses" subtitle="All CLOs in this report">
-                                <DonutChart centerLabel="CLOs" slices={[
-                                  { label: 'Passed', value: passed, color: CHART.good },
-                                  { label: 'Audit Required', value: allClos.length - passed, color: CHART.critical },
-                                ]} />
-                              </ChartCard>
-                            </div>
-                          );
-                        })()}
-                        {moreReportData.courses.map((course: any, i: number) => (
-                          <div key={i} className="border border-slate-200 rounded-2xl overflow-hidden">
-                            <div className="bg-slate-50 px-4 py-2 flex items-center gap-3 border-b border-slate-200">
-                              <span className="font-black text-xs text-slate-800">{course.courseCode}</span>
-                              <span className="text-xs text-slate-500">{course.courseTitle}</span>
-                            </div>
-                            <table className="w-full text-xs">
-                              <thead>
-                                <tr className="border-b border-slate-100">
-                                  <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">CLO</th>
-                                  <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Description</th>
-                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Mapped GA</th>
-                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Attainment %</th>
-                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Status</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {(course.clos || []).map((clo: any, j: number) => (
-                                  <tr key={j} className="border-b border-slate-50 hover:bg-slate-50">
-                                    <td className="px-3 py-2 font-bold text-sky-700">{clo.code}</td>
-                                    <td className="px-3 py-2 text-slate-600">{clo.description}</td>
-                                    <td className="px-3 py-2 text-center"><span className="bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded-full text-[10px]">{clo.mappedGA ? gaLabel(clo.mappedGA) : '—'}</span></td>
-                                    <td className="px-3 py-2 text-center font-bold">{cloPct(clo).toFixed(1)}%</td>
-                                    <td className="px-3 py-2 text-center">
-                                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${cloPct(clo) >= reportThreshold(moreReportData) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                        {cloPct(clo) >= reportThreshold(moreReportData) ? 'Passed' : 'Audit Required'}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* PO Attainment */}
-                    {moreReportType === 'po_attainment' && moreReportData.pos && (
-                      <div className="space-y-3">
-                        <div className="flex gap-3 flex-wrap text-xs">
-                          <span className="bg-teal-100 text-teal-800 font-bold px-3 py-1 rounded-full">{moreReportData.programName}</span>
-                          <span className="text-[10px] text-slate-400">HEC Program Outcome Compliance Report</span>
-                        </div>
-                        {(() => {
-                          const pos: any[] = moreReportData.pos;
-                          const colorOf = (st: string) => st === 'Met' ? CHART.good : st === 'Partially Met' ? CHART.warning : CHART.critical;
-                          const count = (st: string) => pos.filter(p => p.status === st).length;
-                          const other = pos.length - count('Met') - count('Partially Met');
-                          return (
-                            <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
-                              <ChartCard title="Attainment by Program Outcome" subtitle="Bar colour shows HEC compliance status">
-                                <HBarChart
-                                  showThreshold={false}
-                                  legend={[{ color: CHART.good, label: 'Met' }, { color: CHART.warning, label: 'Partially Met' }, { color: CHART.critical, label: 'Not Met' }]}
-                                  items={pos.map(p => ({ label: String(p.id), detail: p.text, value: p.attainmentPercent ?? 0, color: colorOf(p.status), status: p.status, extra: (p.contributingGAs || []).length ? [`GAs: ${(p.contributingGAs || []).map((g: any) => gaLabel(g.gaId)).join(', ')}`] : [] }))}
-                                />
-                              </ChartCard>
-                              <ChartCard title="Compliance status" subtitle="Number of POs by status">
-                                <DonutChart centerLabel="POs" slices={[
-                                  { label: 'Met', value: count('Met'), color: CHART.good },
-                                  { label: 'Partially Met', value: count('Partially Met'), color: CHART.warning },
-                                  { label: 'Not Met', value: other, color: CHART.critical },
-                                ]} />
-                              </ChartCard>
-                            </div>
-                          );
-                        })()}
-                        <table className="w-full border-collapse text-xs">
-                          <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200">
-                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">PO</th>
-                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Description</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Attainment %</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Status</th>
-                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Contributing GAs</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {moreReportData.pos.map((po: any, i: number) => (
-                              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 align-top">
-                                <td className="px-3 py-2 font-black text-teal-700">{po.id}</td>
-                                <td className="px-3 py-2 text-slate-600">{po.text}</td>
-                                <td className="px-3 py-2 text-center font-bold">{(po.attainmentPercent ?? 0).toFixed(1)}%</td>
-                                <td className="px-3 py-2 text-center">
-                                  <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${po.status === 'Met' ? 'bg-green-100 text-green-700' : po.status === 'Partially Met' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                                    {po.status}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-2">
-                                  <div className="flex flex-wrap gap-1">
-                                    {(po.contributingGAs || []).map((ga: any, j: number) => (
-                                      <span key={j} className="bg-indigo-50 text-indigo-700 font-bold text-[10px] px-2 py-0.5 rounded-full border border-indigo-200">
-                                        {gaLabel(ga.gaId)} ({(ga.attainmentPercent ?? 0).toFixed(0)}%)
-                                      </span>
-                                    ))}
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-
-                    {/* At-Risk Students */}
-                    {moreReportType === 'at_risk' && moreReportData.students && (
-                      <div className="space-y-3">
-                        <div className="flex gap-3 flex-wrap text-xs">
-                          <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full">{moreReportData.atRiskCount ?? moreReportData.students.length} At-Risk Students</span>
-                          <span className="text-[10px] text-slate-400">Students failing 2+ CLOs below {reportThreshold(moreReportData)}%</span>
-                        </div>
-                        {moreReportData.students.length > 0 && (() => {
-                          const students: any[] = moreReportData.students;
-                          const perCourse: Record<string, number> = {};
-                          students.forEach(st => Array.from(new Set((st.failedCLOs || []).map((f: any) => String(f.courseCode)))).forEach((code: any) => { perCourse[code] = (perCourse[code] || 0) + 1; }));
-                          const courseRows = Object.entries(perCourse).sort((a, b) => b[1] - a[1]);
-                          const buckets = [2, 3, 4, 5].map(n => ({
-                            label: n === 5 ? '5+ CLOs' : `${n} CLOs`,
-                            value: students.filter(st => { const k = (st.failedCLOs || []).length; return n === 5 ? k >= 5 : k === n; }).length,
-                          }));
-                          const fewer = students.filter(st => (st.failedCLOs || []).length < 2).length;
-                          return (
-                            <div className="grid gap-3 lg:grid-cols-2">
-                              <ChartCard title="At-risk students per course" subtitle="Students with at least one failed CLO in the course">
-                                <HBarChart colorByStatus={false} showThreshold={false} unit="students" max={0}
-                                  items={courseRows.map(([code, n]) => ({ label: code, value: n }))} />
-                              </ChartCard>
-                              <ChartCard title="How many CLOs each student is failing" subtitle="Number of students by failed-CLO count">
-                                <HBarChart colorByStatus={false} showThreshold={false} unit="students" max={0}
-                                  items={[...(fewer ? [{ label: '1 CLO', value: fewer }] : []), ...buckets]} />
-                              </ChartCard>
-                            </div>
-                          );
-                        })()}
-                        <table className="w-full border-collapse text-xs">
-                          <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200">
-                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Reg No</th>
-                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Name</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">CLOs Below Threshold</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Courses</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Avg Failed-CLO %</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {moreReportData.students.map((s: any, i: number) => (
-                              <tr key={i} className="border-b border-slate-100 hover:bg-amber-50">
-                                <td className="px-3 py-2 font-mono font-bold text-amber-700">{s.regNo}</td>
-                                <td className="px-3 py-2 font-bold text-slate-700">{s.name}</td>
-                                <td className="px-3 py-2 text-center">
-                                  <span className="bg-red-100 text-red-700 font-black px-2 py-0.5 rounded-full">{(s.failedCLOs || []).length}</span>
-                                </td>
-                                <td className="px-3 py-2 text-center text-slate-500">{Array.from(new Set((s.failedCLOs || []).map((f: any) => f.courseCode))).join(', ') || '—'}</td>
-                                <td className="px-3 py-2 text-center font-bold">{(s.failedCLOs || []).length ? `${((s.failedCLOs || []).reduce((a: number, f: any) => a + Number(f.attainment ?? 0), 0) / (s.failedCLOs || []).length).toFixed(1)}%` : '—'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-
-                    {/* Gap Analysis */}
-                    {moreReportType === 'gap_analysis' && moreReportData.attributes && (
-                      <div className="space-y-3">
-                        <p className="text-xs text-slate-500">GAs with zero or low course coverage — indicates curriculum gaps requiring attention.</p>
-                        {(() => {
-                          const atts: any[] = [...moreReportData.attributes].sort(byGa('gaId'));
-                          const kind = (st: string) => st === 'No Coverage' ? 'none' : (st === 'Partial Coverage' || st === 'Mapped but No CLOs' || st === 'Low Attainment') ? 'partial' : 'ok';
-                          const colorOf = (st: string) => ({ none: CHART.critical, partial: CHART.warning, ok: CHART.good } as any)[kind(st)];
-                          return (
-                            <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
-                              <ChartCard title="Course coverage by GA" subtitle="Number of mapped courses per GA. Bar colour shows coverage status.">
-                                <HBarChart showThreshold={false} unit="courses" max={0}
-                                  legend={[{ color: CHART.good, label: 'Covered' }, { color: CHART.warning, label: 'Partial / Low' }, { color: CHART.critical, label: 'No Coverage' }]}
-                                  items={atts.map(g => ({ label: gaLabel(g.gaId), detail: g.gaName, value: g.mappedCoursesCount ?? 0, color: colorOf(g.status), status: g.status, extra: [`Active CLOs: ${g.activeCLOsCount ?? 0}`, `Avg attainment: ${g.avgAttainment != null ? Number(g.avgAttainment).toFixed(1) + '%' : '—'}`] }))}
-                                />
-                              </ChartCard>
-                              <ChartCard title="Coverage status" subtitle="Number of GAs by status">
-                                <DonutChart centerLabel="GAs" slices={[
-                                  { label: 'Covered', value: atts.filter(g => kind(g.status) === 'ok').length, color: CHART.good },
-                                  { label: 'Partial / Low', value: atts.filter(g => kind(g.status) === 'partial').length, color: CHART.warning },
-                                  { label: 'No Coverage', value: atts.filter(g => kind(g.status) === 'none').length, color: CHART.critical },
-                                ]} />
-                              </ChartCard>
-                            </div>
-                          );
-                        })()}
-                        <table className="w-full border-collapse text-xs">
-                          <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200">
-                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">GA</th>
-                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Name</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Mapped Courses</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Active CLOs</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Avg Attainment</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {[...moreReportData.attributes].sort(byGa('gaId')).map((g: any, i: number) => (
-                              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
-                                <td className="px-3 py-2 font-black text-orange-700">{gaLabel(g.gaId)}</td>
-                                <td className="px-3 py-2 text-slate-700">{g.gaName}</td>
-                                <td className="px-3 py-2 text-center font-bold">{g.mappedCoursesCount ?? 0}</td>
-                                <td className="px-3 py-2 text-center font-bold">{g.activeCLOsCount ?? 0}</td>
-                                <td className="px-3 py-2 text-center font-bold">{g.avgAttainment != null ? `${Number(g.avgAttainment).toFixed(1)}%` : '—'}</td>
-                                <td className="px-3 py-2 text-center">
-                                  <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] 
-                                    ${g.status === 'No Coverage' ? 'bg-red-100 text-red-700' :
-                                      (g.status === 'Partial Coverage' || g.status === 'Mapped but No CLOs' || g.status === 'Low Attainment') ? 'bg-amber-100 text-amber-700' :
-                                      'bg-green-100 text-green-700'}`}>
-                                    {g.status}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-
-                    {/* Instructor Performance */}
-                    {moreReportType === 'instructor_performance' && moreReportData.instructors && (
-                      <div className="space-y-3">
-                        <p className="text-xs text-slate-500">Instructors with courses below the {reportThreshold(moreReportData)}% attainment threshold.</p>
-                        {moreReportData.instructors.length > 0 && (() => {
-                          const insts: any[] = moreReportData.instructors;
-                          const allCourses = insts.flatMap(i => i.courses || []);
-                          const below = allCourses.filter((c: any) => c.belowThreshold).length;
-                          return (
-                            <div className="grid gap-3 lg:grid-cols-[2fr_1fr]">
-                              <ChartCard title="Courses per instructor" subtitle="On-track vs below-target courses">
-                                <StackedBarChart
-                                  parts={[{ label: 'On Track', color: CHART.good }, { label: 'Below Target', color: CHART.critical }]}
-                                  rows={insts.map(i => ({ label: String(i.name || i.employeeId || '—'), values: [(i.courses || []).filter((c: any) => !c.belowThreshold).length, (i.courses || []).filter((c: any) => c.belowThreshold).length] }))}
-                                />
-                              </ChartCard>
-                              <ChartCard title="All courses" subtitle="Courses by status">
-                                <DonutChart centerLabel="courses" slices={[
-                                  { label: 'On Track', value: allCourses.length - below, color: CHART.good },
-                                  { label: 'Below Target', value: below, color: CHART.critical },
-                                ]} />
-                              </ChartCard>
-                            </div>
-                          );
-                        })()}
-                        {moreReportData.instructors.map((inst: any, i: number) => (
-                          <div key={i} className="border border-slate-200 rounded-2xl overflow-hidden">
-                            <div className="bg-slate-50 px-4 py-2 flex items-center gap-3 border-b border-slate-200">
-                              <UserCheck className="w-3.5 h-3.5 text-rose-600" />
-                              <span className="font-black text-xs text-slate-800">{inst.name}</span>
-                              <span className="text-xs text-slate-400">{inst.employeeId}</span>
-                              <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${inst.coursesBelowThreshold > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                                {inst.coursesBelowThreshold ?? 0} courses below threshold
-                              </span>
-                            </div>
-                            <table className="w-full text-xs">
-                              <thead>
-                                <tr className="border-b border-slate-100">
-                                  <th className="text-left px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Course</th>
-                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Avg Attainment</th>
-                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Semester</th>
-                                  <th className="text-center px-3 py-2 font-black text-slate-500 uppercase tracking-wider">Status</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {(inst.courses || []).map((c: any, j: number) => (
-                                  <tr key={j} className="border-b border-slate-50 hover:bg-slate-50">
-                                    <td className="px-3 py-2 font-bold text-slate-700">{c.courseCode} — {c.courseTitle}</td>
-                                    <td className="px-3 py-2 text-center font-bold">{c.avgCLOAttainment != null ? `${Number(c.avgCLOAttainment).toFixed(1)}%` : '—'}</td>
-                                    <td className="px-3 py-2 text-center text-slate-500">{c.semester ?? '—'}</td>
-                                    <td className="px-3 py-2 text-center">
-                                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${!c.belowThreshold ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                        {!c.belowThreshold ? 'On Track' : 'Below Target'}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Cohort Comparison */}
-                    {moreReportType === 'cohort_comparison' && moreReportData.cohorts && (
-                      <div className="space-y-3">
-                        <p className="text-xs text-slate-500">GA attainment across academic years / batches ({moreReportData.gaId ? gaLabel(moreReportData.gaId) : 'All GAs'}).</p>
-                        {moreReportData.cohorts.length > 0 && (() => {
-                          const cohorts: any[] = moreReportData.cohorts;
-                          const gas: string[] = Array.from(new Set(cohorts.map(c => String(c.gaId)))).sort((a, b) => gaNum(a) - gaNum(b));
-                          const years: string[] = Array.from(new Set(cohorts.map(c => String(c.academicYear)))).sort();
-                          const val = (ga: string, yr: string) => { const c = cohorts.find(x => String(x.gaId) === ga && String(x.academicYear) === yr); return c ? Number(c.attainmentPercent ?? 0) : null; };
-                          return (
-                            <ChartCard title="GA attainment by academic year" subtitle={years.length > 1 ? 'Each colour is an academic year; darker = more recent' : `Academic year ${years[0]}`}>
-                              <GroupedColumnChart categories={gas.map(gaLabel)} series={years} value={(cat, yr) => val(gas[gas.map(gaLabel).indexOf(cat)], yr)} threshold={moreReportData.threshold ?? undefined} />
-                            </ChartCard>
-                          );
-                        })()}
-                        <table className="w-full border-collapse text-xs">
-                          <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200">
-                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Academic Year</th>
-                              <th className="text-left px-3 py-2 font-black text-slate-600 uppercase tracking-wider">GA</th>
-                              <th className="text-center px-3 py-2 font-black text-slate-600 uppercase tracking-wider">Attainment %</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {moreReportData.cohorts.map((c: any, i: number) => (
-                              <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
-                                <td className="px-3 py-2 font-bold text-green-700">{c.academicYear}</td>
-                                <td className="px-3 py-2 font-bold text-indigo-700">{gaLabel(c.gaId)}</td>
-                                <td className="px-3 py-2 text-center font-bold">{Number(c.attainmentPercent ?? 0).toFixed(1)}%</td>
-</tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                    {/* CO Summary, PO, At-Risk, Instructor, Gap, Cohort: printable reports with charts */}
+                    {(() => {
+                      const prog = (data?.programs || []).find(p => p.id === moreReportProgramId);
+                      const ctx = { departmentName: activeDepartment?.name, programName: prog?.name, programCode: prog?.code?.toUpperCase(), gaLabel };
+                      const t = reportThreshold(moreReportData);
+                      if (moreReportType === 'co_summary' && moreReportData.courses) return <CoSummaryReport data={moreReportData} ctx={ctx} threshold={t} />;
+                      if (moreReportType === 'po_attainment' && moreReportData.pos) return <PoAttainmentReport data={moreReportData} ctx={ctx} threshold={t} />;
+                      if (moreReportType === 'at_risk' && moreReportData.students) return <AtRiskReport data={moreReportData} ctx={ctx} threshold={t} />;
+                      if (moreReportType === 'instructor_performance' && moreReportData.instructors) return <InstructorPerformanceReport data={moreReportData} ctx={ctx} threshold={t} />;
+                      if (moreReportType === 'gap_analysis' && moreReportData.attributes) return <GapAnalysisReport data={moreReportData} ctx={ctx} />;
+                      if (moreReportType === 'cohort_comparison' && moreReportData.cohorts) return <CohortComparisonReport data={moreReportData} ctx={ctx} threshold={t} />;
+                      return null;
+                    })()}
 
                     {/* Fallback for unexpected shapes */}
                     {!['attributes','semesters','clos','courses','pos','students','instructors','cohorts','offerings'].some(k => moreReportData[k]) && (
