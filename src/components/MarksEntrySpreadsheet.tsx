@@ -107,31 +107,41 @@ export default function MarksEntrySpreadsheet({
       const updatedCourses = courses.map(c => {
         if (c.id === selectedCourse.id) {
           // Also keep obe_marks and obeMarks in perfect sync so backend always gets question-wise marks inside obe_marks
-          const copyObeMarks = { ...(c.obe_marks || c.obeMarks || {}) };
+          const copyObeMarks: Record<string, Record<string, number | null>> = { ...(c.obe_marks || c.obeMarks || {}) };
 
           const updatedStudents = c.students.map(std => {
             const nextMarks = { ...(draftMarks[std.regNo] || std.student_marks || std.marks || {}) };
-            
-            if (!copyObeMarks[std.regNo]) {
-              copyObeMarks[std.regNo] = {};
-            }
-            
+            const obeRow = { ...(copyObeMarks[std.regNo] || {}) };
+            copyObeMarks[std.regNo] = obeRow;
+
             // Recompute aggregated unit total aggregates for all categories for this student
             c.categories.forEach(cat => {
               for (let u = 1; u <= cat.units; u++) {
                 const matchingUnit = (c.unitsData[cat.name] || []).find(unit => unit.unitNo === u);
                 const questions = matchingUnit?.questions || [];
                 if (questions.length > 0) {
+                  let anyEntered = false;
                   const uTotal = questions.reduce((sum, q) => {
                     const qKey = `q-${cat.name}-${u}-${q.id}`;
-                    const score = nextMarks[qKey] ?? 0;
-                    
+                    const score = nextMarks[qKey];
+
+                    // Blank stays blank. Null tells the backend a saved mark was cleared.
+                    if (score === undefined) {
+                      if (obeRow[q.id] !== undefined) obeRow[q.id] = null;
+                      return sum;
+                    }
+
                     // Keep obeMarks updated
-                    copyObeMarks[std.regNo][q.id] = score;
+                    obeRow[q.id] = score;
+                    anyEntered = true;
 
                     return sum + score;
                   }, 0);
-                  nextMarks[`${cat.name}-${u}`] = uTotal;
+                  if (anyEntered) {
+                    nextMarks[`${cat.name}-${u}`] = uTotal;
+                  } else {
+                    delete nextMarks[`${cat.name}-${u}`];
+                  }
                 }
               }
             });
@@ -145,8 +155,8 @@ export default function MarksEntrySpreadsheet({
           return {
             ...c,
             students: updatedStudents,
-            obeMarks: copyObeMarks,
-            obe_marks: copyObeMarks
+            obeMarks: copyObeMarks as Record<string, Record<string, number>>,
+            obe_marks: copyObeMarks as Record<string, Record<string, number>>
           };
         }
         return c;
@@ -351,11 +361,11 @@ export default function MarksEntrySpreadsheet({
       const hasAny = unitLeafColumns.some(col => {
         if (col.type === 'question') {
           const mark = studentDraft[col.id];
-          return mark !== undefined && mark !== null && mark > 0;
+          return mark !== undefined && mark !== null;
         } else {
           const dKey = `${currentCategory.name}-${col.unitNo}`;
           const mark = studentDraft[dKey];
-          return mark !== undefined && mark !== null && mark > 0;
+          return mark !== undefined && mark !== null;
         }
       });
       if (hasAny) count++;
@@ -720,7 +730,7 @@ export default function MarksEntrySpreadsheet({
                         const markKey = col.type === 'question' ? col.id : `${currentCategory.name}-${col.unitNo}`;
                         const cellValue = studentDraft[markKey];
 
-                        const isEmpty = cellValue === 0 || cellValue === undefined;
+                        const isEmpty = cellValue === undefined;
 
                         return (
                           <td key={col.id} className="p-1.5 text-center min-w-[90px] border-r border-b border-slate-300">
@@ -737,7 +747,8 @@ export default function MarksEntrySpreadsheet({
                                   type="text"
                                   inputMode="decimal"
                                   value={editingText?.key === `${student.regNo}|${markKey}` ? editingText.text : (cellValue !== undefined ? cellValue : '')}
-                                  placeholder="0"
+                                  placeholder="-"
+                                  aria-label={`${student.name || student.regNo}, ${col.name}`}
                                   className={`w-full text-center font-mono font-bold text-xs bg-transparent border-none outline-none p-0 focus:ring-0 ${
                                     isEmpty ? 'text-rose-600' : 'text-slate-900'
                                   }`}
@@ -745,8 +756,8 @@ export default function MarksEntrySpreadsheet({
                                   onChange={(e) => {
                                     const val = e.target.value;
                                     if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                      const numVal = (val === '' || val === '.') ? 0 : parseFloat(val);
-                                      if (numVal > col.maxMarks) {
+                                      const numVal = (val === '' || val === '.') ? undefined : parseFloat(val);
+                                      if (numVal !== undefined && numVal > col.maxMarks) {
                                         if (onShowNotification) {
                                           onShowNotification(`Warning: Entered marks (${numVal}) cannot be greater than the maximum marks (${col.maxMarks}) allowed for this assessment.`, 'error');
                                         }
@@ -755,7 +766,11 @@ export default function MarksEntrySpreadsheet({
                                       setEditingText({ key: `${student.regNo}|${markKey}`, text: val });
                                       setDraftMarks(prev => {
                                         const nextStdDraft = { ...(prev[student.regNo] || {}) };
-                                        nextStdDraft[markKey] = numVal;
+                                        if (numVal === undefined) {
+                                          delete nextStdDraft[markKey];
+                                        } else {
+                                          nextStdDraft[markKey] = numVal;
+                                        }
                                         return {
                                           ...prev,
                                           [student.regNo]: nextStdDraft
@@ -767,17 +782,7 @@ export default function MarksEntrySpreadsheet({
                                   onBlur={(e) => {
                                     setEditingText(null);
                                     const val = parseFloat(e.target.value);
-                                    if (isNaN(val) || val < 0) {
-                                      setDraftMarks(prev => {
-                                        const nextStdDraft = { ...(prev[student.regNo] || {}) };
-                                        nextStdDraft[markKey] = 0;
-                                        return {
-                                          ...prev,
-                                          [student.regNo]: nextStdDraft
-                                        };
-                                      });
-                                      setIsDirty(true);
-                                    } else if (val > col.maxMarks) {
+                                    if (val > col.maxMarks) {
                                       if (onShowNotification) {
                                         onShowNotification(`Warning: Went over the maximum marks limit. Reverting to maximum (${col.maxMarks}m).`, 'error');
                                       }
