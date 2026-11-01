@@ -1,4 +1,4 @@
-import { OBEData, Department, Program, GA, Course, ProgramObjective, InstructorCourse, Student, PastCourse, StudentResultStatus, SubmissionCheck } from '../types';
+import { OBEData, Department, Program, GA, Course, ProgramObjective, InstructorCourse, Student, PastCourse, PastEntryCourse, EligiblePastStudent, StudentResultStatus, SubmissionCheck } from '../types';
 import { DEFAULT_TEMP_PASSWORD } from '../utils/config';
 
 export const BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://zeeshanbalti.pythonanywhere.com/api';
@@ -346,6 +346,11 @@ const recordCourseVersions = (list: any[]) => {
     if (ic && ic.id && ic.updatedAt) courseVersions.set(String(ic.id), String(ic.updatedAt));
   });
 };
+
+// The course being entered on the teacher's screen by the department. While set,
+// that screen's calls go to the department's past course endpoints.
+let pastEntryCourseId: string | null = null;
+const courseApiRoot = () => pastEntryCourseId ? `${BASE_URL}/admin/past-courses` : `${BASE_URL}/instructor/courses`;
 
 const mapInstructorCourseToBackend = (c: InstructorCourse): any => {
   // Map obeQuestions to both camelCase and snake_case
@@ -786,7 +791,7 @@ export const apiService = {
    */
   async addStudentsToInstructorCourse(courseId: string, students: { regNo: string; name: string }[]): Promise<void> {
     const res = await fetchWithTimeout(
-      `${BASE_URL}/instructor/courses/${encodeURIComponent(courseId)}/students/`,
+      `${courseApiRoot()}/${encodeURIComponent(courseId)}/students/`,
       { method: 'POST', headers: getHeaders(), body: JSON.stringify({ students }) },
       10000
     );
@@ -826,7 +831,10 @@ export const apiService = {
   },
 
   async getInstructorCourses(): Promise<InstructorCourse[]> {
-    const response = await fetchWithTimeout(`${BASE_URL}/instructor/courses/`, {
+    const url = pastEntryCourseId
+      ? `${courseApiRoot()}/${encodeURIComponent(pastEntryCourseId)}/`
+      : `${courseApiRoot()}/`;
+    const response = await fetchWithTimeout(url, {
       headers: getHeaders(),
     }, 20000);
     if (!response.ok) {
@@ -834,7 +842,8 @@ export const apiService = {
       const errMsg = errData.detail || errData.error || errData.message || `Failed to fetch instructor courses (Status ${response.status})`;
       throw new Error(errMsg);
     }
-    const data = await response.json();
+    const body = await response.json();
+    const data = pastEntryCourseId ? [body] : body;
     if (Array.isArray(data)) {
       recordCourseVersions(data);
       // Normalize enrolled students and obe_marks from backend to standard frontend structure
@@ -906,13 +915,14 @@ export const apiService = {
       pending.forEach(p => { if (savedIds.has(p.id)) lastSentCourseJson.set(p.id, p.json); });
     };
 
+    const saveUrl = pastEntryCourseId ? `${courseApiRoot()}/save/` : `${courseApiRoot()}/`;
     let response: Response;
     try {
       console.log('[DEBUG apiService.saveInstructorCourses] Sending payload to Django backend:', {
-        url: `${BASE_URL}/instructor/courses/`,
+        url: saveUrl,
         payload: { courses: mappedCourses }
       });
-      response = await fetchWithTimeout(`${BASE_URL}/instructor/courses/`, {
+      response = await fetchWithTimeout(saveUrl, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ courses: mappedCourses }),
@@ -1334,7 +1344,7 @@ export const apiService = {
   },
 
   async getSubmissionCheck(courseId: string): Promise<SubmissionCheck> {
-    const res = await fetchWithTimeout(`${BASE_URL}/instructor/courses/${encodeURIComponent(courseId)}/submit/`, {
+    const res = await fetchWithTimeout(`${courseApiRoot()}/${encodeURIComponent(courseId)}/submit/`, {
       headers: getHeaders(),
     }, 20000);
     if (!res.ok) {
@@ -1345,7 +1355,7 @@ export const apiService = {
   },
 
   async submitFinalMarks(courseId: string, acknowledgeWarnings: boolean): Promise<void> {
-    const res = await fetchWithTimeout(`${BASE_URL}/instructor/courses/${encodeURIComponent(courseId)}/submit/`, {
+    const res = await fetchWithTimeout(`${courseApiRoot()}/${encodeURIComponent(courseId)}/submit/`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ acknowledgeWarnings }),
@@ -1357,7 +1367,7 @@ export const apiService = {
   },
 
   async setStudentResultStatus(courseId: string, regNo: string, resultStatus: StudentResultStatus): Promise<void> {
-    const res = await fetchWithTimeout(`${BASE_URL}/instructor/courses/${encodeURIComponent(courseId)}/student-status/`, {
+    const res = await fetchWithTimeout(`${courseApiRoot()}/${encodeURIComponent(courseId)}/student-status/`, {
       method: 'PATCH',
       headers: getHeaders(),
       body: JSON.stringify({ regNo, resultStatus }),
@@ -1365,6 +1375,76 @@ export const apiService = {
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
       throw new Error(errData.detail || errData.error || 'Could not update this student');
+    }
+  },
+
+  setPastEntryCourse(courseId: string | null): void {
+    pastEntryCourseId = courseId;
+  },
+
+  async getPastEntryCourses(): Promise<PastEntryCourse[]> {
+    const res = await fetchWithTimeout(`${BASE_URL}/admin/past-courses/`, { headers: getHeaders() }, 20000);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.error || 'Could not load past courses');
+    }
+    return res.json();
+  },
+
+  async getPastCourseEligibleStudents(programId: string, courseCode: string, academicYear: string): Promise<{ semester: string; students: EligiblePastStudent[] }> {
+    const query = new URLSearchParams({ programId, courseCode, academicYear });
+    const res = await fetchWithTimeout(`${BASE_URL}/admin/past-courses/eligible-students/?${query}`, { headers: getHeaders() }, 20000);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.error || 'Could not load the students');
+    }
+    return res.json();
+  },
+
+  async createPastCourse(course: { programId: string; courseCode: string; academicYear: string; teacherId: string; students: { regNo: string; name: string }[] }): Promise<{ id: string }> {
+    const res = await fetchWithTimeout(`${BASE_URL}/admin/past-courses/`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(course),
+    }, 20000);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.error || 'Could not create this course');
+    }
+    return res.json();
+  },
+
+  async deletePastCourse(courseId: string): Promise<void> {
+    const res = await fetchWithTimeout(`${BASE_URL}/admin/past-courses/${encodeURIComponent(courseId)}/`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    }, 20000);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.error || 'Could not delete this course');
+    }
+  },
+
+  async reopenPastCourse(courseId: string): Promise<void> {
+    const res = await fetchWithTimeout(`${BASE_URL}/admin/past-courses/${encodeURIComponent(courseId)}/reopen/`, {
+      method: 'POST',
+      headers: getHeaders(),
+    }, 20000);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.error || 'Could not reopen this course');
+    }
+  },
+
+  async removeStudentFromPastCourse(courseId: string, regNo: string): Promise<void> {
+    const res = await fetchWithTimeout(`${BASE_URL}/admin/enroll/`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+      body: JSON.stringify({ courseId, regNo }),
+    }, 8000);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.error || 'Could not remove this student');
     }
   },
 
@@ -1435,6 +1515,17 @@ export const apiService = {
       headers: getHeaders()
     }, 5000);
     if (!res.ok) throw new Error('Failed to fetch student GA attainment');
+    return res.json();
+  },
+
+  async getStudentGaTranscript(regNo: string) {
+    const res = await fetchWithTimeout(`${BASE_URL}/reports/student-ga-questions/?regNo=${encodeURIComponent(regNo)}`, {
+      headers: getHeaders()
+    }, 15000);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || errData.detail || 'Could not load your GA transcript.');
+    }
     return res.json();
   },
 

@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Lock, X } from 
 import { apiService } from '../../services/apiService';
 import { PastCourse, StudentResultStatus, SubmissionCheck } from '../../types';
 
-const Overlay = ({ title, subtitle, onClose, children }: { title: string; subtitle?: string; onClose: () => void; children: React.ReactNode }) => (
+export const Overlay = ({ title, subtitle, onClose, children }: { title: string; subtitle?: string; onClose: () => void; children: React.ReactNode }) => (
   <div className="fixed inset-0 z-[100] bg-slate-900/50 flex items-center justify-center p-4 font-sans" role="dialog" aria-modal="true" aria-label={title}>
     <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
       <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-200">
@@ -25,11 +25,13 @@ const Overlay = ({ title, subtitle, onClose, children }: { title: string; subtit
  * blocks submitting until the mark is entered or they are marked absent or
  * withdrawn; an assessment nobody has a mark in is a warning to accept.
  */
-export function SubmitFinalMarksDialog({ courseId, courseLabel, onClose, onSubmitted }: {
+export function SubmitFinalMarksDialog({ courseId, courseLabel, onClose, onSubmitted, finalizes = false }: {
   courseId: string;
   courseLabel: string;
   onClose: () => void;
   onSubmitted: () => void;
+  /** The department entering a past course: this finalizes it, with no one to hand it to. */
+  finalizes?: boolean;
 }) {
   const [check, setCheck] = useState<SubmissionCheck | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +84,7 @@ export function SubmitFinalMarksDialog({ courseId, courseLabel, onClose, onSubmi
   const inputCls = 'bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 cursor-pointer disabled:opacity-60';
 
   return (
-    <Overlay title="Submit Final Marks" subtitle={courseLabel} onClose={onClose}>
+    <Overlay title={finalizes ? 'Finalize Course' : 'Submit Final Marks'} subtitle={courseLabel} onClose={onClose}>
       <div className="overflow-y-auto px-5 py-4 space-y-4 text-xs text-slate-700">
         {error && <p className="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl px-3 py-2">{error}</p>}
         {!check && !error && <p className="text-slate-500">Checking marks…</p>}
@@ -166,7 +168,9 @@ export function SubmitFinalMarksDialog({ courseId, courseLabel, onClose, onSubmi
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
         <p className="text-xs text-slate-600 flex items-center gap-1.5 min-w-0">
           <Lock className="w-3.5 h-3.5 shrink-0" />
-          You can't change marks after submitting unless the department sends the course back.
+          {finalizes
+            ? "Grades go to the transcript, reports and the teacher's Past Courses. You can reopen it to correct a mistake."
+            : "You can't change marks after submitting unless the department sends the course back."}
         </p>
         <div className="flex items-center gap-2 ml-auto">
           <button onClick={onClose} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-200 cursor-pointer">Cancel</button>
@@ -175,7 +179,7 @@ export function SubmitFinalMarksDialog({ courseId, courseLabel, onClose, onSubmi
             disabled={busy || blocked || needsAccept}
             className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
-            {busy ? 'Working…' : 'Submit Final Marks'}
+            {busy ? 'Working…' : finalizes ? 'Finalize Course' : 'Submit Final Marks'}
           </button>
         </div>
       </div>

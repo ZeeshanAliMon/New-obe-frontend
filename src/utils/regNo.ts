@@ -72,3 +72,17 @@ export const getRegNoPreview = (regNo: string) => {
     currentSemesterVal: getOrdinalSuffix(semesterNum)
   };
 };
+
+/** Terms that have ended, newest first, by the same Spring and Fall dates as above. */
+export const pastTerms = (count = 24): string[] => {
+  const now = new Date();
+  const month = now.getMonth();
+  const year = month === 0 ? now.getFullYear() - 1 : now.getFullYear();
+  let index = 2 * year + (month >= 1 && month <= 7 ? 0 : 1);
+  const terms: string[] = [];
+  for (let i = 0; i < count; i++) {
+    index -= 1;
+    terms.push(`${index % 2 === 0 ? 'Spring' : 'Fall'}-${Math.floor(index / 2)}`);
+  }
+  return terms;
+};

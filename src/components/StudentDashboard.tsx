@@ -36,6 +36,7 @@ import { apiService } from '../services/apiService';
 import { buildStudentMarkKeys, computeCourseAggregate, getCourseLetterGrade } from '../utils/grading';
 import { getRegNoPreview } from '../utils/regNo';
 import { ChartCard, HBarChart } from './charts/ReportCharts';
+import StudentGaTranscriptTab from './StudentGaTranscriptTab';
 
 const normalizeRegNo = (reg: string) => {
   if (!reg) return '';
@@ -727,7 +728,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
   
   // Selected tab & active student login switcher for demo
   const [activeRegNo, setActiveRegNo] = useState<string>(studentRegNo);
-  const [activeTab, setActiveTab] = useState<'transcript' | 'obe_clo' | 'ga_attainment'>('transcript');
+  const [activeTab, setActiveTab] = useState<'transcript' | 'obe_clo' | 'ga_attainment' | 'ga_transcript'>('transcript');
   
   // Dynamic API Report States
   const [studentSummary, setStudentSummary] = useState<any>(null);
@@ -2374,7 +2375,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                 : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
           >
-            <FileText className="h-4 w-4" />
+            <FileText className="h-4 w-4 hidden sm:block" />
             <span className="sm:hidden">Transcript</span>
             <span className="hidden sm:inline">Semester Transcript</span>
           </button>
@@ -2386,7 +2387,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                 : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
           >
-            <Layers className="h-4 w-4" />
+            <Layers className="h-4 w-4 hidden sm:block" />
             <span className="sm:hidden">CLOs</span>
             <span className="hidden sm:inline">CLO Attainment Indices</span>
           </button>
@@ -2398,9 +2399,21 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                 : 'border-transparent text-slate-400 hover:text-slate-600'
             }`}
           >
-            <PlaqueIcon className="h-4 w-4" />
+            <PlaqueIcon className="h-4 w-4 hidden sm:block" />
             <span className="sm:hidden">GAs</span>
             <span className="hidden sm:inline">GA Attainment Profile</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('ga_transcript')}
+            className={`py-3.5 px-3 sm:px-5 flex-1 sm:flex-none justify-center sm:justify-start whitespace-nowrap font-bold text-xs tracking-wide uppercase border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'ga_transcript'
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <ClipboardCheck className="h-4 w-4 hidden sm:block" />
+            <span className="sm:hidden">GA Report</span>
+            <span className="hidden sm:inline">GA Transcript</span>
           </button>
         </div>
 
@@ -2631,6 +2644,8 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                 )}
               </motion.div>
             )}
+
+            {activeTab === 'ga_transcript' && <StudentGaTranscriptTab regNo={activeRegNo} />}
 
             {/* CLO ATTAINMENT — same layout as the Semester Transcript tab: one
                 collapsible section per course with a compact table, plus a PDF

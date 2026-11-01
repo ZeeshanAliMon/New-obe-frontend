@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import { Department, Program, Course, Student, InstructorCourse } from '../types';
 import { apiService } from '../services/apiService';
 import { DEFAULT_TEMP_PASSWORD } from '../utils/config';
@@ -32,13 +32,17 @@ import {
   Clock,
   CheckCircle2,
   ArrowRight,
-  Edit
+  Edit,
+  History
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import FacultyDirectoryTab from './admin/FacultyDirectoryTab';
+import PastCourseEntryTab from './admin/PastCourseEntryTab';
 import { matchTeacher, getTeacherId } from '../utils/teacherUtils';
 import { AnimatePresence } from 'motion/react';
 import Toast from './Toast';
+
+const InstructorDashboard = lazy(() => import('./InstructorDashboard'));
 
 const getAutomaticAcademicYear = (): string => {
   const currentDate = new Date();
@@ -216,7 +220,8 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     return departments.find(d => d.id === activeDeptId);
   }, [departments, activeDeptId]);
 
-  const [activeTab, setActiveTab] = useState<'semester-plans' | 'courses' | 'teachers' | 'teacher-assignments' | 'student-enrollment'>('semester-plans');
+  const [activeTab, setActiveTab] = useState<'semester-plans' | 'courses' | 'teachers' | 'teacher-assignments' | 'student-enrollment' | 'past-courses'>('semester-plans');
+  const [pastEntry, setPastEntry] = useState<{ id: string; teacherName: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -2240,6 +2245,19 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     );
   }
 
+  if (pastEntry) {
+    const exit = (message?: string) => {
+      apiService.setPastEntryCourse(null);
+      setPastEntry(null);
+      if (message) triggerNotification(message);
+    };
+    return (
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm font-semibold text-indigo-950">Opening course…</div>}>
+        <InstructorDashboard onLogout={onLogout} instructorName={pastEntry.teacherName} pastEntry={{ onExit: exit }} />
+      </Suspense>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50/50 flex flex-col font-sans">
       {/* HEADER SECTION */}
@@ -2349,6 +2367,18 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
             <UserPlus className="w-4 h-4" />
             <span>Student Enrollments</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('past-courses')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'past-courses'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <History className="w-4 h-4" />
+            <span>Past Course Entry</span>
+          </button>
         </div>
       </div>
 
@@ -2376,6 +2406,20 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
         {/* ACTIVE MODULE CONTAINER */}
         <section className="w-full">
           
+          {activeTab === 'past-courses' && (
+            <PastCourseEntryTab
+              programs={adminPrograms}
+              courses={courses}
+              teachers={teachers}
+              defaultProgramId={selectedPlanProg}
+              onOpenCourse={course => {
+                apiService.setPastEntryCourse(course.id);
+                setPastEntry(course);
+              }}
+              onNotify={triggerNotification}
+            />
+          )}
+
           {/* TAB 1: PREDEFINED SEMESTER PLANS */}
           {activeTab === 'semester-plans' && (
             <div className="space-y-6">

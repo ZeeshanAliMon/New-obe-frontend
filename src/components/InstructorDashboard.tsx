@@ -76,6 +76,8 @@ const areRegNosEqual = (reg1: string | null | undefined, reg2: string | null | u
 interface InstructorDashboardProps {
   onLogout: () => void;
   instructorName?: string;
+  /** The department entering a past course here instead of a teacher (see PastCourseEntryTab). */
+  pastEntry?: { onExit: (message?: string) => void };
 }
 
 // Prefix generator for dynamic column naming based on category
@@ -2058,7 +2060,7 @@ const MarksheetDocument = ({
 
 const DEFAULT_COURSES: InstructorCourse[] = [];
 
-export default function InstructorDashboard({ onLogout, instructorName = 'Prof. Dr. Jameel Ahmed' }: InstructorDashboardProps) {
+export default function InstructorDashboard({ onLogout, instructorName = 'Prof. Dr. Jameel Ahmed', pastEntry }: InstructorDashboardProps) {
   const [courses, setRawCourses] = useState<InstructorCourse[]>([]);
   const setCourses = (update: InstructorCourse[] | ((prev: InstructorCourse[]) => InstructorCourse[])) => {
     setRawCourses(prev => {
@@ -2158,7 +2160,24 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
     }
   };
 
+  const handleExitPastEntry = async () => {
+    if (marksDirty) {
+      showNotification('You have marks that are not saved. Save them before going back.');
+      return;
+    }
+    try {
+      await apiService.saveInstructorCourses(courses);
+      pastEntry?.onExit();
+    } catch (err: any) {
+      showNotification(err?.message || 'Could not save this course. Please try again.');
+    }
+  };
+
   const handleSubmitted = () => {
+    if (pastEntry) {
+      pastEntry.onExit(`${selectedCourse?.code || 'The course'} is finalized.`);
+      return;
+    }
     const remaining = courses.filter(c => c.id !== submitCourseId);
     setCourses(remaining);
     setActiveCourseId(remaining[0]?.id || '');
@@ -4309,6 +4328,16 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
     }));
   };
 
+  const handleRemovePastEntryStudent = async (reg: string) => {
+    if (!selectedCourse) return;
+    try {
+      await apiService.removeStudentFromPastCourse(selectedCourse.id, reg);
+      handleUnenrollStudent(reg);
+    } catch (err: any) {
+      showNotification(err?.message || 'Could not remove this student.');
+    }
+  };
+
   const handleSyncAllStudents = async () => {
     if (!selectedCourse) return;
     try {
@@ -4759,7 +4788,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
     }`;
   };
 
-  const showSidebar = activeTab !== 'clo' && activeTab !== 'grading-system' && activeTab !== 'students' && activeTab !== 'grade' && activeTab !== 'enter-marks';
+  const showSidebar = !pastEntry && activeTab !== 'clo' && activeTab !== 'grading-system' && activeTab !== 'students' && activeTab !== 'grade' && activeTab !== 'enter-marks';
 
   // Render ONLY the marksheet document if pure print mode is triggered
   if (isDirectPrinting && selectedCourse) {
@@ -4808,12 +4837,20 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
           <h1 className="text-base font-bold font-display tracking-tight flex items-center gap-2">
             <span>Iqra University OBE</span>
             <span className="bg-indigo-500/20 text-indigo-300 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-indigo-500/30">
-              INSTRUCTOR CONTROL
+              {pastEntry ? 'PAST COURSE ENTRY' : 'INSTRUCTOR CONTROL'}
             </span>
           </h1>
         </div>
 
         <div className="flex items-center gap-2">
+          {pastEntry ? (
+            <button
+              onClick={handleExitPastEntry}
+              className="px-3.5 py-1.5 bg-transparent hover:bg-white/10 text-white hover:text-white rounded-lg transition-all border border-white/20 hover:border-white/40 flex items-center gap-1.5 cursor-pointer text-xs font-semibold"
+            >
+              <span>Save and Go Back</span>
+            </button>
+          ) : (
           <button
             id="btn-logout"
             onClick={onLogout}
@@ -4823,6 +4860,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
             <LogOut className="w-3.5 h-3.5 text-white/95" />
             <span>Logout</span>
           </button>
+          )}
         </div>
       </header>
 
@@ -5075,7 +5113,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
           {/* Quick status display */}
           <div className="flex flex-col items-end gap-0.5">
             <span className="text-[10px] text-slate-500 font-mono tracking-tight font-semibold hidden sm:inline">
-              User: <strong className="text-indigo-950 font-extrabold">{instructorName} ({selectedCourse ? selectedCourse.departmentName : 'Department of Computing and Technology'} Instructor)</strong>
+              {pastEntry ? 'Taught by' : 'User'}: <strong className="text-indigo-950 font-extrabold">{instructorName} ({selectedCourse ? selectedCourse.departmentName : 'Department of Computing and Technology'} Instructor)</strong>
             </span>
           </div>
 
@@ -5098,7 +5136,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
             </div>
 
             {/* Quick Course Selector */}
-            <div className="flex items-center gap-2 bg-white px-2.5 py-1 border border-slate-300 rounded-lg shadow-xs">
+            <div className={`${pastEntry && selectedCourse ? 'pointer-events-none' : ''} flex items-center gap-2 bg-white px-2.5 py-1 border border-slate-300 rounded-lg shadow-xs`}>
               <span className="text-[9px] text-indigo-950 font-bold tracking-wide uppercase">COURSE:</span>
               <select
                 value={activeCourseId}
@@ -5151,18 +5189,20 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
 
           {/* Right side: hand in final marks, and courses already handed in */}
           <div className="flex items-center gap-2">
+            {!pastEntry && (
             <button
               onClick={() => setShowPastCourses(true)}
               className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
             >
               Past Courses
             </button>
+            )}
             {selectedCourse && !isLocked && (
               <button
                 onClick={handleOpenSubmit}
                 className="px-3 py-1.5 rounded-lg bg-indigo-600 text-xs font-bold text-white hover:bg-indigo-700 cursor-pointer"
               >
-                Submit Final Marks
+                {pastEntry ? 'Finalize Course' : 'Submit Final Marks'}
               </button>
             )}
           </div>
@@ -5177,6 +5217,17 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
           <div className="bg-amber-55 border border-amber-200 text-amber-850 px-4 py-3 rounded-xl flex items-center gap-3 animate-in fade-in duration-200 text-xs shadow-xs font-sans">
             <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
             <span>{errorMsg}</span>
+          </div>
+        )}
+
+        {pastEntry && !isLocked && selectedCourse && (
+          <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-start gap-3 text-indigo-950 shadow-xs font-sans">
+            <Info className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-bold text-sm">Entering {selectedCourse.code} for {(selectedCourse.academicYear || '').replace(/-/g, ' ')}</h3>
+              <p className="text-xs mt-1">Your work saves as you go, and stays hidden from the teacher and students until you finalize it.</p>
+              <p className="text-xs mt-1"><strong>Check the weightage before changing it.</strong> Weightage belongs to the course, not the term, so a change also applies to every other term of {selectedCourse.code}, including the current one.</p>
+            </div>
           </div>
         )}
 
@@ -5198,17 +5249,19 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
               <div className="min-w-0">
                 <h3 className="font-bold text-sm text-slate-900">Past course: {selectedCourse.code}{selectedCourse.academicYear ? `, ${selectedCourse.academicYear.replace(/-/g, ' ')}` : ''}</h3>
                 <p className="text-xs text-slate-600 mt-1">
-                  {selectedCourse.status === 'closed'
+                  {pastEntry
+                    ? 'This course is finalized. To correct a mistake, go back and reopen it.'
+                    : selectedCourse.status === 'closed'
                     ? 'The department has finalized this course. You can see everything here, but nothing can be changed.'
                     : "You have submitted this course. You can see everything here, but nothing can be changed unless the department sends it back."}
                 </p>
               </div>
             </div>
             <button
-              onClick={handleLeavePastCourse}
+              onClick={pastEntry ? handleExitPastEntry : handleLeavePastCourse}
               className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer whitespace-nowrap"
             >
-              Back to current courses
+              {pastEntry ? 'Back to Past Course Entry' : 'Back to current courses'}
             </button>
           </div>
         )}
@@ -5373,7 +5426,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                         handleResetWeightage={handleResetWeightage}
                         handleSaveAllWeightage={handleSaveAllWeightage}
                         handleOpenUnitEditor={handleOpenUnitEditor}
-                        onSyncAllStudents={handleSyncAllStudents}
+                        onSyncAllStudents={pastEntry ? undefined : handleSyncAllStudents}
                         onAddStudent={(regNo, name) => {
                           if (!selectedCourse) return;
                           const cleanReg = regNo.trim();
@@ -5450,7 +5503,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                               );
                             });
                         }}
-                        onUnenrollStudent={handleUnenrollStudent}
+                        onUnenrollStudent={pastEntry ? handleRemovePastEntryStudent : handleUnenrollStudent}
                       />
                       </fieldset>
                     )}
@@ -8984,6 +9037,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
       <AnimatePresence>
         {submitCourseId && selectedCourse && (
           <SubmitFinalMarksDialog
+            finalizes={!!pastEntry}
             courseId={submitCourseId}
             courseLabel={`${selectedCourse.code} — ${selectedCourse.title}${selectedCourse.academicYear ? ` (${selectedCourse.academicYear.replace(/-/g, ' ')})` : ''}`}
             onClose={() => setSubmitCourseId(null)}

@@ -104,6 +104,28 @@ export interface SubmissionCheck {
   students: { regNo: string; name: string; resultStatus: StudentResultStatus }[];
 }
 
+export interface PastEntryCourse {
+  id: string;
+  code: string;
+  title: string;
+  programId: string;
+  programCode: string;
+  academicYear: string;
+  semester: string;
+  teacherName: string;
+  state: 'draft' | 'finalized';
+  studentCount: number;
+  cloCount: number;
+  closedAt: string | null;
+}
+
+export interface EligiblePastStudent {
+  regNo: string;
+  name: string;
+  semesterInTerm: string;
+  suggested: boolean;
+}
+
 export interface PastCourse {
   id: string;
   code: string;

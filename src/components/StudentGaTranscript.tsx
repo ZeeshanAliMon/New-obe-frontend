@@ -70,7 +70,12 @@ export function SummaryChart({ gas, threshold, labelOf }: { gas: TranscriptGa[];
  * `gas` map) into GA groups of courses. A course's GA status uses the same
  * questions-passed rule as the GA percent: attained at >= threshold.
  */
-function toTranscriptGas(data: any): TranscriptGa[] {
+const termOrder = (term: string) => {
+  const year = Number((term.match(/\d{4}/) || [0])[0]);
+  return year * 2 + (/^sp/i.test(term) ? 0 : 1);
+};
+
+export function toTranscriptGas(data: any): TranscriptGa[] {
   const courses: any[] = Array.isArray(data?.courses) ? data.courses : [];
   return (Array.isArray(data?.gas) ? data.gas : []).map((g: any) => {
     const rows: TranscriptCourse[] = courses
@@ -82,7 +87,7 @@ function toTranscriptGas(data: any): TranscriptGa[] {
           academicYear: c.academicYear || '', score: Number(r.percent ?? 0), status: r.attained ? 'Attained' : 'Not Attained',
         };
       })
-      .sort((a, b) => a.title.localeCompare(b.title) || a.code.localeCompare(b.code));
+      .sort((a, b) => a.title.localeCompare(b.title) || a.code.localeCompare(b.code) || termOrder(a.academicYear) - termOrder(b.academicYear));
     return {
       gaId: g.id, gaTitle: g.title, score: Number(g.percent ?? 0), status: g.attained ? 'Attained' : 'Not Attained',
       attainedCount: rows.filter(r => r.status === 'Attained').length, courseCount: rows.length, courses: rows,
