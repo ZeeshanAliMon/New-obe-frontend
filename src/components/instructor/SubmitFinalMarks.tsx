@@ -184,7 +184,7 @@ export function SubmitFinalMarksDialog({ courseId, courseLabel, onClose, onSubmi
 }
 
 /** Read-only list of the courses a teacher has submitted or had finalized. */
-export function PastCoursesDialog({ onClose }: { onClose: () => void }) {
+export function PastCoursesDialog({ onClose, onOpenCourse }: { onClose: () => void; onOpenCourse: (courseId: string) => void }) {
   const [courses, setCourses] = useState<PastCourse[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -196,7 +196,7 @@ export function PastCoursesDialog({ onClose }: { onClose: () => void }) {
   }, []);
 
   return (
-    <Overlay title="Past Courses" subtitle="Read-only record of courses you have submitted" onClose={onClose}>
+    <Overlay title="Past Courses" subtitle="Open a course to see all of it. You can't change its marks." onClose={onClose}>
       <div className="overflow-y-auto px-5 py-4 space-y-2 text-xs text-slate-700">
         {error && <p className="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl px-3 py-2">{error}</p>}
         {!courses && !error && <p className="text-slate-500">Loading…</p>}
@@ -205,10 +205,11 @@ export function PastCoursesDialog({ onClose }: { onClose: () => void }) {
           const isOpen = openId === c.id;
           return (
             <div key={c.id} className="border border-slate-200 rounded-xl overflow-hidden">
+              <div className="flex items-stretch">
               <button
                 onClick={() => setOpenId(isOpen ? null : c.id)}
                 aria-expanded={isOpen}
-                className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-slate-50 cursor-pointer"
+                className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2.5 text-left hover:bg-slate-50 cursor-pointer"
               >
                 {isOpen ? <ChevronDown className="w-3.5 h-3.5 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0" />}
                 <span className="font-mono font-bold text-indigo-700">{c.code}</span>
@@ -218,6 +219,14 @@ export function PastCoursesDialog({ onClose }: { onClose: () => void }) {
                   {c.state === 'finalized' ? 'Finalized' : 'Waiting for department'}
                 </span>
               </button>
+              <button
+                onClick={() => onOpenCourse(c.id)}
+                aria-label={`Open ${c.code}, ${(c.academicYear || '').replace(/-/g, ' ')}`}
+                className="px-3 border-l border-slate-200 text-xs font-bold text-indigo-700 hover:bg-indigo-50 cursor-pointer"
+              >
+                Open
+              </button>
+              </div>
               {isOpen && (
                 <table className="w-full text-left border-t border-slate-200">
                   <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">

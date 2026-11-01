@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  ClipboardCheck, 
-  Search, 
+  ClipboardCheck,
+  Lock,
+  Search,
   Sparkles, 
   Trash2, 
   HelpCircle,
@@ -15,7 +16,7 @@ import {
   Undo
 } from 'lucide-react';
 import { InstructorCourse } from '../types';
-import { apiService } from '../services/apiService';
+import { apiService, isCourseLocked } from '../services/apiService';
 
 interface MarksEntrySpreadsheetProps {
   courses: InstructorCourse[];
@@ -73,6 +74,7 @@ export default function MarksEntrySpreadsheet({
   const [draftMarks, setDraftMarks] = useState<Record<string, Record<string, number>>>({});
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const isLocked = isCourseLocked(selectedCourse);
 
   // Tells the dashboard about typed marks not saved yet, so it can stop a submit.
   useEffect(() => {
@@ -529,7 +531,12 @@ export default function MarksEntrySpreadsheet({
       {/* ACTION BAR: Save Changes / Cancel / Unsaved Changes Indicator */}
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-xs select-none">
         <div className="flex items-center gap-2">
-          {isDirty ? (
+          {isLocked ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold">
+              <Lock className="w-3.5 h-3.5 shrink-0" />
+              <span>Read-only: these marks can't be changed.</span>
+            </div>
+          ) : isDirty ? (
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold animate-pulse">
               <span className="w-2 h-2 rounded-full bg-amber-500"></span>
               <span>Unsaved Changes: Click "Save Changes" to save modified marks.</span>
@@ -542,7 +549,7 @@ export default function MarksEntrySpreadsheet({
           )}
         </div>
         
-        <div className="flex items-center gap-2">
+        <div className={`flex items-center gap-2 ${isLocked ? 'hidden' : ''}`}>
           <button
             onClick={handleCancelChanges}
             disabled={!isDirty || isSaving}
@@ -696,6 +703,9 @@ export default function MarksEntrySpreadsheet({
                       {/* Student Name */}
                       <td className="p-2 pl-3 font-semibold text-slate-700 bg-white sticky left-48 z-10 text-left font-sans truncate border-r-2 border-r-slate-300 border-b border-b-slate-300">
                         {student.name}
+                        {student.resultStatus && (
+                          <span className="ml-1.5 text-[10px] font-semibold text-amber-800 capitalize">({student.resultStatus})</span>
+                        )}
                       </td>
 
                       {/* Side-by-side assessment cells */}
@@ -752,7 +762,7 @@ export default function MarksEntrySpreadsheet({
                                   className={`w-full text-center font-mono font-bold text-xs bg-transparent border-none outline-none p-0 focus:ring-0 ${
                                     isEmpty ? 'text-rose-600' : 'text-slate-900'
                                   }`}
-                                  disabled={selectedCourse?.status === 'closed'}
+                                  disabled={isLocked}
                                   onChange={(e) => {
                                     const val = e.target.value;
                                     if (val === '' || /^\d*\.?\d*$/.test(val)) {

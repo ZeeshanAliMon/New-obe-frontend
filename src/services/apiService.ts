@@ -492,6 +492,10 @@ const mapCourseToBackend = (c: Course): any => {
   };
 };
 
+// A submitted or finalized course: the teacher can see it but not change it.
+export const isCourseLocked = (c?: { status?: string; submittedAt?: string | null } | null): boolean =>
+  !!c && (c.status === 'closed' || !!c.submittedAt);
+
 export const apiService = {
   async checkHealth(): Promise<boolean> {
     try {
@@ -887,7 +891,7 @@ export const apiService = {
   },
 
   async _saveChangedInstructorCourses(courses: InstructorCourse[]): Promise<InstructorCourse[]> {
-    const pending = courses.map(c => {
+    const pending = courses.filter(c => !isCourseLocked(c)).map(c => {
       const { updatedAt: _ignored, ...mapped } = mapInstructorCourseToBackend(c);
       return { id: String(c.id), json: JSON.stringify(mapped), mapped };
     }).filter(p => lastSentCourseJson.get(p.id) !== p.json);
@@ -1362,6 +1366,24 @@ export const apiService = {
       const errData = await res.json().catch(() => ({}));
       throw new Error(errData.detail || errData.error || 'Could not update this student');
     }
+  },
+
+  async getPastCourseDetail(courseId: string): Promise<InstructorCourse> {
+    const res = await fetchWithTimeout(`${BASE_URL}/instructor/past-courses/${encodeURIComponent(courseId)}/`, {
+      headers: getHeaders(),
+    }, 20000);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.error || 'Could not open this course');
+    }
+    const ic = await res.json();
+    const marksOf = (s: any) => s.student_marks || s.marks || {};
+    ic.students = (ic.students || []).map((s: any) => ({
+      regNo: s.regNo, reg_no: s.regNo, name: s.name || '',
+      marks: marksOf(s), student_marks: marksOf(s), studentMarks: marksOf(s),
+      resultStatus: s.resultStatus || '',
+    }));
+    return ic;
   },
 
   async getPastCourses(): Promise<PastCourse[]> {

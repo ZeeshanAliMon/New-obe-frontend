@@ -57,3 +57,12 @@
     break-inside: avoid;
   }
 }
+
+/* Controls in a locked (read-only) section should look locked. */
+fieldset:disabled button,
+button:disabled {
+  cursor: not-allowed;
+}
+fieldset:disabled button {
+  opacity: 0.5;
+}

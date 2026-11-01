@@ -43,7 +43,7 @@ import {
   RefreshCw,
   Lock
 } from 'lucide-react';
-import { apiService, BASE_URL } from '../services/apiService';
+import { apiService, BASE_URL, isCourseLocked } from '../services/apiService';
 import { Course, Department, Program, MarksCategory, UnitItem, UnitQuestion, CourseStudent, InstructorCourse, OBEData } from '../types';
 import MarksEntrySpreadsheet from './MarksEntrySpreadsheet';
 // @ts-ignore
@@ -637,6 +637,7 @@ const normalizeCourse = (course: InstructorCourse): InstructorCourse => {
     const regNo = s.regNo || s.reg_no || s.registration_no || s.registrationNo || '';
     const name = s.name || s.student_name || s.studentName || '';
     const marks = { ...(s.marks || s.obtained_marks || s.obtainedMarks || {}) };
+    const resultStatus = s.resultStatus || '';
 
     // Inject individual OBE question marks from rawObeMarks (from OBEStudentMark DB model)
     const matchedKey = Object.keys(rawObeMarks || {}).find(k => areRegNosEqual(k, regNo));
@@ -661,7 +662,8 @@ const normalizeCourse = (course: InstructorCourse): InstructorCourse => {
     return {
       regNo,
       name,
-      marks
+      marks,
+      resultStatus
     };
   });
 
@@ -2062,13 +2064,15 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
     setRawCourses(prev => {
       const next = typeof update === 'function' ? update(prev) : update;
       const originalActive = prev.find(c => c.id === activeCourseId);
-      if (originalActive && originalActive.status === 'closed') {
-        return next.map(c => {
+      if (isCourseLocked(originalActive)) {
+        const kept = next.map(c => {
           if (c.id === activeCourseId) {
             return originalActive;
           }
           return c;
         });
+        // Same list when nothing changed: a new array would re-trigger autosave forever.
+        return kept.length === prev.length && kept.every((c, i) => c === prev[i]) ? prev : kept;
       }
       return next;
     });
@@ -2096,6 +2100,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
   const selectedCourse = useMemo(() => {
     return courses.find(c => c.id === activeCourseId) || null;
   }, [courses, activeCourseId]);
+  const isLocked = isCourseLocked(selectedCourse);
 
   const [selectedObeAssKey, setSelectedObeAssKey] = useState<string>('');
   const [selectedMarksCategoryName, setSelectedMarksCategoryName] = useState<string>('');
@@ -2105,6 +2110,38 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
   const [submitCourseId, setSubmitCourseId] = useState<string | null>(null);
   const [showPastCourses, setShowPastCourses] = useState(false);
   const [marksDirty, setMarksDirty] = useState(false);
+  const [pastCourseId, setPastCourseId] = useState<string | null>(null);
+
+  // A past course sits in the course list only while it is being viewed. Autosave
+  // skips it (see isCourseLocked in apiService).
+  const handleOpenPastCourse = async (courseId: string) => {
+    if (marksDirty) {
+      showNotification('You have marks that are not saved. Save them before opening another course.');
+      return;
+    }
+    try {
+      const past = normalizeCourse(await apiService.getPastCourseDetail(courseId));
+      setCourses(prev => [...prev.filter(c => !isCourseLocked(c)), past]);
+      setPastCourseId(past.id);
+      setActiveCourseId(past.id);
+      setActiveTab('enter-marks');
+      setShowPastCourses(false);
+    } catch (err: any) {
+      showNotification(err?.message || 'Could not open this course.');
+    }
+  };
+
+  const handleLeavePastCourse = () => {
+    setActiveCourseId(courses.find(c => !isCourseLocked(c))?.id || '');
+  };
+
+  useEffect(() => {
+    if (pastCourseId && activeCourseId !== pastCourseId) {
+      setCourses(prev => prev.filter(c => c.id !== pastCourseId));
+      setPastCourseId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCourseId, pastCourseId]);
 
   // Save first, so the check and the submit see what is on screen.
   const handleOpenSubmit = async () => {
@@ -5098,11 +5135,11 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
               </div>
             )}
 
-            {/* Closed Course Badge */}
-            {selectedCourse?.status === 'closed' && (
+            {/* Read-only Course Badge */}
+            {isLocked && (
               <div className="flex items-center gap-2 bg-rose-50 border border-rose-250 px-3 py-1 rounded-lg animate-fade-in text-rose-700 shadow-xs">
                 <Lock className="w-3.5 h-3.5" />
-                <span className="text-xs font-black uppercase tracking-wider">LOCKED / CLOSED</span>
+                <span className="text-xs font-black uppercase tracking-wider">READ-ONLY</span>
               </div>
             )}
 
@@ -5120,7 +5157,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
             >
               Past Courses
             </button>
-            {selectedCourse && selectedCourse.status !== 'closed' && (
+            {selectedCourse && !isLocked && (
               <button
                 onClick={handleOpenSubmit}
                 className="px-3 py-1.5 rounded-lg bg-indigo-600 text-xs font-bold text-white hover:bg-indigo-700 cursor-pointer"
@@ -5154,13 +5191,25 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
           </div>
         )}
 
-        {selectedCourse?.status === 'closed' && (
-          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-start gap-3 text-rose-800 shadow-xs animate-fade-in font-sans">
-            <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5 animate-pulse" />
-            <div>
-              <h3 className="font-bold text-sm text-rose-950">This Course is Finalized & Locked</h3>
-              <p className="text-xs text-rose-700 mt-1">This course has been officially closed and finalized by the department administration. All grades, assessments, CLO mappings, and learning outcome attainments are now in a <strong>read-only snapshot state</strong> and cannot be mutated.</p>
+        {isLocked && selectedCourse && (
+          <div className="bg-slate-50 border border-slate-300 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-slate-800 shadow-xs font-sans">
+            <div className="flex items-start gap-3 min-w-0">
+              <Lock className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <h3 className="font-bold text-sm text-slate-900">Past course: {selectedCourse.code}{selectedCourse.academicYear ? `, ${selectedCourse.academicYear.replace(/-/g, ' ')}` : ''}</h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  {selectedCourse.status === 'closed'
+                    ? 'The department has finalized this course. You can see everything here, but nothing can be changed.'
+                    : "You have submitted this course. You can see everything here, but nothing can be changed unless the department sends it back."}
+                </p>
+              </div>
             </div>
+            <button
+              onClick={handleLeavePastCourse}
+              className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer whitespace-nowrap"
+            >
+              Back to current courses
+            </button>
           </div>
         )}
         
@@ -5307,6 +5356,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                   <div className="bg-white/85 border border-slate-200/80 backdrop-blur-md rounded-2xl p-4 sm:p-6 shadow-md text-slate-800">
                     {/* TAB 1: SET WEIGHTAGE, TAB 2: EDIT ITEMS, TAB 3: REGISTER STUDENTS (MODULARIZED) */}
                     {selectedCourse && (activeTab === 'weightage' || activeTab === 'edit-items' || activeTab === 'students') && (
+                      <fieldset disabled={isLocked} className="min-w-0 border-0 p-0 m-0">
                       <WeightageAndStudents
                         activeTab={activeTab}
                         selectedCourse={selectedCourse}
@@ -5402,10 +5452,12 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                         }}
                         onUnenrollStudent={handleUnenrollStudent}
                       />
+                      </fieldset>
                     )}
             {/* TAB: CLO SPECIFICATION */}
             {activeTab === "clo" && selectedCourse && (
               <div id="clo-setup-view" className="space-y-6 animate-fadeIn font-sans max-w-4xl mx-auto">
+                <fieldset disabled={isLocked} className="min-w-0 border-0 p-0 m-0 space-y-6">
                 {/* 1. Enter CLO count card */}
                 <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4 font-sans shadow-2xs">
                   <div className="border-b border-slate-200 pb-2">
@@ -5547,11 +5599,13 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                     </button>
                   </div>
                 </div>
+                </fieldset>
               </div>
             )}
             {/* TAB: GRADING SYSTEM SETUP */}
             {activeTab === 'grading-system' && selectedCourse && (
               <div id="grading-system-view" className="space-y-4 animate-fadeIn">
+                <fieldset disabled={isLocked} className="min-w-0 border-0 p-0 m-0 space-y-4">
                 <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
                   <span className="text-xs font-bold text-slate-550 font-sans">Evaluated Selection for {selectedCourse.code}:</span>
                   <span className="px-3 py-1 bg-indigo-600 text-white text-xs font-black rounded-lg uppercase tracking-wider font-sans">
@@ -5883,6 +5937,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                   </div>
 
                 </div>
+                </fieldset>
               </div>
             )}
 
@@ -8170,12 +8225,14 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                   {/* Right Column: Grid Action Buttons */}
                   <div className="md:col-span-3 flex flex-row md:flex-col gap-2 justify-center">
                     <button
+                      disabled={isLocked}
                       onClick={handleAddUnitRow}
                       className="grow md:grow-0 py-2 px-4 bg-white hover:bg-slate-50 text-slate-850 border border-slate-250 text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer text-center"
                     >
                       Add
                     </button>
                     <button
+                      disabled={isLocked}
                       onClick={handleRemoveUnitRow}
                       className="grow md:grow-0 py-2 px-4 bg-white hover:bg-slate-50 text-slate-850 border border-slate-250 text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer text-center"
                     >
@@ -8193,6 +8250,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                   const shortPrefix = isPresentation ? 'M' : 'Q';
 
                   return (
+                    <fieldset disabled={isLocked} className="min-w-0 border-0 p-0 m-0">
                     <div className="bg-slate-50 border border-slate-200 p-5 rounded-2xl space-y-4">
                       <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                         <h4 className="text-xs uppercase tracking-wider font-bold text-slate-800 font-sans flex items-center gap-1.5">
@@ -8396,6 +8454,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                       </div>
 
                     </div>
+                    </fieldset>
                   );
                 })()}
 
@@ -8407,10 +8466,11 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                   onClick={() => setUnitEditingCategory(null)}
                   className="px-5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-bold rounded-lg cursor-pointer transition-colors"
                 >
-                  Cancel
+                  {isLocked ? 'Close' : 'Cancel'}
                 </button>
                 <button
                   onClick={handleSaveUnitSettings}
+                  hidden={isLocked}
                   className="px-6 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer transition-colors"
                 >
                   Ok
@@ -8930,7 +8990,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
             onSubmitted={handleSubmitted}
           />
         )}
-        {showPastCourses && <PastCoursesDialog onClose={() => setShowPastCourses(false)} />}
+        {showPastCourses && <PastCoursesDialog onClose={() => setShowPastCourses(false)} onOpenCourse={handleOpenPastCourse} />}
         {notification && (
           <Toast
             message={notification.message}
