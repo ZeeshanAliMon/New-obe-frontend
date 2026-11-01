@@ -34,6 +34,7 @@ import {
 import { Student, Course, Program, Department, InstructorCourse, GA } from '../types';
 import { apiService } from '../services/apiService';
 import { buildStudentMarkKeys, computeCourseAggregate, getCourseLetterGrade } from '../utils/grading';
+import { getRegNoPreview } from '../utils/regNo';
 import { ChartCard, HBarChart } from './charts/ReportCharts';
 
 const normalizeRegNo = (reg: string) => {
@@ -545,63 +546,8 @@ const calculateStudentCLOAttainment = (rawSc: any, regToUse: string, allInstruct
 };
 
 const parseDetailsFromRegNo = (regNo: string) => {
-  const cleanReg = (regNo || '').trim().toUpperCase();
-  const parts = cleanReg.split('-');
-  
-  // Try to find the batch (e.g., SP23, FA24)
-  const batchPart = parts.find(p => /^[A-Z]{2}\d{2}$/.test(p));
-  
-  if (batchPart) {
-    let semester = '4th';
-    if (batchPart === 'SP23') {
-      semester = '7th';
-    } else if (batchPart === 'FA23') {
-      semester = '6th';
-    } else if (batchPart === 'SP24') {
-      semester = '5th';
-    } else if (batchPart === 'FA24') {
-      semester = '4th';
-    } else if (batchPart === 'SP25') {
-      semester = '3rd';
-    } else if (batchPart === 'FA25') {
-      semester = '2nd';
-    } else if (batchPart === 'SP26') {
-      semester = '1st';
-    }
-    
-    return {
-      batch: batchPart,
-      semester: semester
-    };
-  }
-  
-  // Also try searching for pattern anywhere inside string
-  const match = cleanReg.match(/[A-Z]{2}\d{2}/);
-  if (match) {
-    const batchPart = match[0];
-    let semester = '4th';
-    if (batchPart === 'SP23') {
-      semester = '7th';
-    } else if (batchPart === 'FA23') {
-      semester = '6th';
-    } else if (batchPart === 'SP24') {
-      semester = '5th';
-    } else if (batchPart === 'FA24') {
-      semester = '4th';
-    } else if (batchPart === 'SP25') {
-      semester = '3rd';
-    } else if (batchPart === 'FA25') {
-      semester = '2nd';
-    } else if (batchPart === 'SP26') {
-      semester = '1st';
-    }
-    return {
-      batch: batchPart,
-      semester: semester
-    };
-  }
-  
-  return null;
+  const preview = getRegNoPreview(regNo || '');
+  return preview ? { batch: preview.batchCode, semester: preview.currentSemesterVal } : null;
 };
 
 const getFuzzyStudentMark = (marks: Record<string, number> | undefined, catName: string, unitNo: number, questionId?: string): number => {
@@ -918,9 +864,9 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
               departmentId: parsedUser.departmentId || parsedUser.department_id || '',
               programId: parsedUser.programId || parsedUser.program_id || '',
               batch: parsedDetails?.batch || parsedUser.batch || 'SP23',
-              // Admission's semester (sent at login) is the real one; the reg-number
+              // The backend's semester (sent at login) is the real one; the reg-number
               // guess is only a fallback for logins from older backends.
-              semester: parsedUser.semester || parsedDetails?.semester || '7th'
+              semester: parsedUser.semester || parsedDetails?.semester || '1st'
             };
           }
         } catch (e) {
@@ -941,7 +887,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
           departmentId: '',
           programId: '',
           batch: parsedDetails?.batch || 'SP23',
-          semester: parsedDetails?.semester || '7th'
+          semester: parsedDetails?.semester || '1st'
         }];
       }
 
@@ -2019,9 +1965,15 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
         }
       }
       
+      // A batch in the reg number (22144-FA24) gives the exact first term.
+      const admitted = getRegNoPreview(activeStudent.regNo);
+      if (admitted) startYear = admitted.startYear;
+      const firstTerm = admitted && admitted.startSemesterName !== 'Spring' ? 1 : 0;
+
       semKeys.forEach((key, index) => {
-        const term = index % 2 === 0 ? 'SPRING' : 'FALL';
-        const year = startYear + Math.floor(index / 2);
+        const termIndex = index + firstTerm;
+        const term = termIndex % 2 === 0 ? 'SPRING' : 'FALL';
+        const year = startYear + Math.floor(termIndex / 2);
         const shortYear = String(year).slice(-2);
         mapping[key] = `${term}-${shortYear}`;
       });
