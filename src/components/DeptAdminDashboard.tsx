@@ -161,6 +161,8 @@ interface TeacherCourseAssignment {
   section?: string;
   academicYear?: string;
   status?: 'active' | 'closed';
+  submittedAt?: string | null;
+  submissionWarnings?: string[];
 }
 
 interface DeptAdminDashboardProps {
@@ -220,6 +222,7 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Custom confirmation dialog state
+  const [sendBack, setSendBack] = useState<{ assignment: TeacherCourseAssignment; note: string } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -491,7 +494,9 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
             courseCode: a.courseCode || a.course_code || a.code,
             programId: a.programId || a.program_id || a.program,
             academicYear: a.academicYear || a.academic_year || 'Fall-2024',
-            status: a.status || 'active'
+            status: a.status || 'active',
+            submittedAt: a.submittedAt || null,
+            submissionWarnings: a.submissionWarnings || []
           }));
 
           // Recover student-course bindings directly from assignments returned from the backend database
@@ -790,7 +795,8 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
         obeMarks: existingCourse?.obeMarks || {},
         selectedGradingSystem: existingCourse?.selectedGradingSystem || 'relative',
         academicYear: academicYear || existingCourse?.academicYear || 'Fall-2024',
-        status: assignment.status || existingCourse?.status || 'active'
+        status: assignment.status || existingCourse?.status || 'active',
+        submittedAt: assignment.submittedAt
       };
     });
 
@@ -808,8 +814,8 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     (async () => {
       const failures: string[] = [];
       for (const ic of updatedInstructorCourses) {
-        // A closed course's roster is locked server-side; syncing it only errors.
-        if (ic.status === 'closed') continue;
+        // A submitted or closed course's roster is locked server-side; syncing it only errors.
+        if (ic.status === 'closed' || ic.submittedAt) continue;
         if ((ic.students && ic.students.length > 0) || forceSyncCodes?.has(normalizeCourseCode(ic.code))) {
           try {
             await apiService.enrollStudents(
@@ -1662,21 +1668,28 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     // differs in case/format from the stored frontend_id.
     const courseId = assignment.id ? String(assignment.id) : `course-assigned-${assignment.courseCode}-${employeeId}-${finalProgramId}-${acadYear}`;
 
+    const submitted = !!assignment.submittedAt;
+    const label = `${assignment.courseCode}${course?.title ? ` (${course.title})` : ''}, ${acadYear.replace(/-/g, ' ')}`;
+    const warnings = assignment.submissionWarnings || [];
+    const warningText = warnings.length > 0
+      ? `\n\nThe teacher accepted these warnings when submitting:\n${warnings.map(w => `• ${w}`).join('\n')}`
+      : '';
+
     setConfirmDialog({
       isOpen: true,
-      title: "Close Semester & Finalize Course",
-      message: `Are you sure you want to CLOSE THE SEMESTER for course ${assignment.courseCode} (${course?.title || ''})?\n\nThis will lock the course, snapshot current student marks, compute final letter grades & GPA, and finalize official transcripts. Instructors will NO LONGER be able to modify any marks.`,
-      confirmText: "Close Semester",
+      title: submitted ? "Finalize Course" : "Teacher Has Not Submitted",
+      message: submitted
+        ? `Finalize ${label}?\n\nThis creates final grades and official transcripts. It can't be undone, and the course can't be sent back afterwards.${warningText}`
+        : `The teacher has NOT submitted final marks for ${label}. Marks may be incomplete, and any missing mark counts as 0.\n\nOnly continue if the teacher can't submit, for example if they have left. Finalizing creates official transcripts and can't be undone.`,
+      confirmText: submitted ? "Finalize" : "Finalize Anyway",
       cancelText: "Cancel",
       isDanger: true,
       onConfirm: async () => {
         try {
-          // 1. Hit the backend finalize-course endpoint
-          await apiService.finalizeCourse(courseId, acadYear);
+          await apiService.finalizeCourse(courseId, acadYear, !submitted);
 
-          // 2. Locally mark assignment as closed
           const updatedAssignments = teacherAssignments.map(a => {
-            if (a.teacherId === assignment.teacherId && a.courseCode === assignment.courseCode && a.programId === assignment.programId) {
+            if (a.teacherId === assignment.teacherId && a.courseCode === assignment.courseCode && a.programId === assignment.programId && a.academicYear === assignment.academicYear) {
               return { ...a, status: 'closed' as const };
             }
             return a;
@@ -1685,40 +1698,33 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
           setTeacherAssignments(updatedAssignments);
           localStorage.setItem('IQRA_OBE_TEACHER_ASSIGNMENTS', JSON.stringify(updatedAssignments));
 
-          // 3. Instantly sync changes to InstructorCourses
+          // Instantly sync changes to InstructorCourses
           syncToInstructorCourses(courses, teachers, updatedAssignments, studentBindings, students);
 
-          triggerNotification(`Successfully finalized and closed ${assignment.courseCode} for academic year ${acadYear}. Transcripts generated!`);
+          triggerNotification(`Finalized ${assignment.courseCode} for ${acadYear}. Transcripts generated!`);
         } catch (err: any) {
           console.error(err);
-          const errMsgLower = (err.message || '').toLowerCase();
-          const isCourseNotFound = errMsgLower.includes("not found") || errMsgLower.includes("404") || errMsgLower.includes("permission");
-          
-          if (isCourseNotFound) {
-            // Resilient fallback: Allow local finalization/close so the Admin is not blocked
-            const updatedAssignments = teacherAssignments.map(a => {
-              if (a.teacherId === assignment.teacherId && a.courseCode === assignment.courseCode && a.programId === assignment.programId) {
-                return { ...a, status: 'closed' as const };
-              }
-              return a;
-            });
-
-            setTeacherAssignments(updatedAssignments);
-            localStorage.setItem('IQRA_OBE_TEACHER_ASSIGNMENTS', JSON.stringify(updatedAssignments));
-
-            // Instantly sync changes to InstructorCourses
-            syncToInstructorCourses(courses, teachers, updatedAssignments, studentBindings, students);
-
-            triggerNotification(
-              `Closed locally! ${assignment.courseCode} has been finalized in your local workspace. (The instructor hasn't initialized/saved this course on the server yet.)`,
-              false
-            );
-          } else {
-            triggerNotification(err.message || "Failed to finalize and close course.", true);
-          }
+          triggerNotification(err.message || "Failed to finalize course.", true);
         }
       }
     });
+  };
+
+  const handleSendBack = async () => {
+    if (!sendBack || !sendBack.assignment.id) return;
+    const { assignment, note } = sendBack;
+    try {
+      await apiService.returnCourse(String(assignment.id), note.trim());
+      const updatedAssignments = teacherAssignments.map(a =>
+        a.id === assignment.id ? { ...a, submittedAt: null, submissionWarnings: [] } : a
+      );
+      setTeacherAssignments(updatedAssignments);
+      localStorage.setItem('IQRA_OBE_TEACHER_ASSIGNMENTS', JSON.stringify(updatedAssignments));
+      setSendBack(null);
+      triggerNotification(`Sent ${assignment.courseCode} back to the teacher.`);
+    } catch (err: any) {
+      triggerNotification(err.message || 'Failed to send the course back.', true);
+    }
   };
 
   // 5. Manage Predefined Plans
@@ -2898,7 +2904,7 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
                         <th className="hidden md:table-cell text-left font-semibold px-3 py-3">Program</th>
                         <th className="text-left font-semibold px-3 py-3">Term</th>
                         <th className="text-center font-semibold px-3 py-3">Status</th>
-                        <th className="text-right font-semibold px-5 sm:px-6 py-3 w-24">Action</th>
+                        <th className="text-right font-semibold px-5 sm:px-6 py-3">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -2908,6 +2914,8 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
                         const course = courses.find(c => c.code === a.courseCode && (!assignmentProgClean || String(c.programId).trim().toLowerCase() === assignmentProgClean)) || courses.find(c => c.code === a.courseCode);
                         const prog = programs.find(p => String(p.id).trim().toLowerCase() === String(a.programId).trim().toLowerCase());
                         const isClosed = a.status === 'closed';
+                        const isSubmitted = !isClosed && !!a.submittedAt;
+                        const warningCount = (a.submissionWarnings || []).length;
 
                         return (
                           <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
@@ -2938,6 +2946,14 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
                                   <Lock className="w-3 h-3" />
                                   Closed
                                 </span>
+                              ) : isSubmitted ? (
+                                <span
+                                  title={(a.submissionWarnings || []).join('\n') || undefined}
+                                  className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 px-2.5 py-0.5 rounded-full text-xs font-semibold border border-amber-200 whitespace-nowrap"
+                                >
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  Submitted{warningCount > 0 ? ` · ${warningCount} warning${warningCount === 1 ? '' : 's'}` : ''}
+                                </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full text-xs font-semibold border border-blue-100">
                                   <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
@@ -2945,7 +2961,27 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
                                 </span>
                               )}
                             </td>
-                            <td className="px-5 sm:px-6 py-3 text-right">
+                            <td className="px-5 sm:px-6 py-3 text-right whitespace-nowrap">
+                              {!isClosed && (
+                                <button
+                                  onClick={() => handleFinalizeCourse(a)}
+                                  className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${isSubmitted ? 'text-indigo-700 hover:bg-indigo-50' : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50'}`}
+                                  title={isSubmitted ? 'Create final grades and transcripts' : 'The teacher has not submitted yet'}
+                                >
+                                  <Lock className="h-3.5 w-3.5" />
+                                  <span>Finalize</span>
+                                </button>
+                              )}
+                              {isSubmitted && (
+                                <button
+                                  onClick={() => setSendBack({ assignment: a, note: '' })}
+                                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-amber-800 hover:bg-amber-50 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer"
+                                  title="Return to the teacher to correct"
+                                >
+                                  <ArrowRight className="h-3.5 w-3.5 rotate-180" />
+                                  <span>Send back</span>
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleRemoveTeacherAssignment(a.teacherId, a.courseCode, a.programId)}
                                 className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-rose-600 hover:bg-rose-50 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer"
@@ -3380,6 +3416,42 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
       )}
 
       {/* CUSTOM CONFIRMATION DIALOG */}
+      {sendBack && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-label="Send course back">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-sm w-full p-6 space-y-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-extrabold text-slate-900">Send {sendBack.assignment.courseCode} back</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">The teacher can edit the marks again and must resubmit. They will see this note.</p>
+            </div>
+            <textarea
+              value={sendBack.note}
+              onChange={(e) => setSendBack({ ...sendBack, note: e.target.value })}
+              rows={3}
+              aria-label="What needs fixing"
+              placeholder="What needs fixing?"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-indigo-600/10 focus:border-indigo-600"
+            />
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSendBack(null)}
+                className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!sendBack.note.trim()}
+                onClick={handleSendBack}
+                className="px-4 py-2 text-white rounded-xl text-xs font-bold transition-all cursor-pointer bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Send Back
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirmDialog?.isOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-sm w-full p-6 space-y-4 relative animate-in zoom-in-95 duration-150">

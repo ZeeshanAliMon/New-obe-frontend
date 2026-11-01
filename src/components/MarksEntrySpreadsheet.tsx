@@ -30,6 +30,7 @@ interface MarksEntrySpreadsheetProps {
   handleClearInlineQuestions: (categoryName: string, unitNo: number) => void;
   handleOpenUnitEditor?: (categoryName: string, unitIndex?: number) => void; 
   onShowNotification?: (message: string, type?: 'success' | 'error' | 'info') => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 interface ColumnGroup {
@@ -63,7 +64,8 @@ export default function MarksEntrySpreadsheet({
   handleWizardPartition,
   handleClearInlineQuestions,
   handleOpenUnitEditor,
-  onShowNotification
+  onShowNotification,
+  onDirtyChange
 }: MarksEntrySpreadsheetProps) {
 
   // Local state for tracking unsaved edited marks
@@ -71,6 +73,14 @@ export default function MarksEntrySpreadsheet({
   const [draftMarks, setDraftMarks] = useState<Record<string, Record<string, number>>>({});
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Tells the dashboard about typed marks not saved yet, so it can stop a submit.
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+    return () => onDirtyChange?.(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDirty]);
+
   // Raw text of the cell being typed in, so partial decimals like "7." survive
   // until blur (the draft itself only holds numbers).
   const [editingText, setEditingText] = useState<{ key: string; text: string } | null>(null);

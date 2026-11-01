@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import WeightageAndStudents from './instructor/WeightageAndStudents';
+import { PastCoursesDialog, SubmitFinalMarksDialog } from './instructor/SubmitFinalMarks';
 import Toast from './Toast';
 import * as XLSX from 'xlsx';
 import { 
@@ -2101,6 +2102,32 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
   const [activeUnitConfigNo, setActiveUnitConfigNo] = useState<number | null>(null);
   const lastActiveCourseIdRef = useRef<string>('');
   const isFirstLoadRef = useRef<boolean>(true);
+  const [submitCourseId, setSubmitCourseId] = useState<string | null>(null);
+  const [showPastCourses, setShowPastCourses] = useState(false);
+  const [marksDirty, setMarksDirty] = useState(false);
+
+  // Save first, so the check and the submit see what is on screen.
+  const handleOpenSubmit = async () => {
+    if (!selectedCourse) return;
+    if (marksDirty) {
+      showNotification('You have marks that are not saved. Save them before submitting.');
+      return;
+    }
+    try {
+      await apiService.saveInstructorCourses(courses);
+      setSubmitCourseId(selectedCourse.id);
+    } catch (err: any) {
+      showNotification(err?.message || 'Could not save your marks. Please try again.');
+    }
+  };
+
+  const handleSubmitted = () => {
+    const remaining = courses.filter(c => c.id !== submitCourseId);
+    setCourses(remaining);
+    setActiveCourseId(remaining[0]?.id || '');
+    setSubmitCourseId(null);
+    showNotification('Final marks submitted. You can still see them in Past Courses.', 'success');
+  };
 
   // Load from API on mount, fallback offline if server not reachable
   useEffect(() => {
@@ -5085,9 +5112,22 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
 
           </div>
 
-          {/* Right side course lock / configurations */}
-          <div className="flex items-center">
-            
+          {/* Right side: hand in final marks, and courses already handed in */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowPastCourses(true)}
+              className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
+            >
+              Past Courses
+            </button>
+            {selectedCourse && selectedCourse.status !== 'closed' && (
+              <button
+                onClick={handleOpenSubmit}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 text-xs font-bold text-white hover:bg-indigo-700 cursor-pointer"
+              >
+                Submit Final Marks
+              </button>
+            )}
           </div>
 
         </div>
@@ -5100,6 +5140,17 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
           <div className="bg-amber-55 border border-amber-200 text-amber-850 px-4 py-3 rounded-xl flex items-center gap-3 animate-in fade-in duration-200 text-xs shadow-xs font-sans">
             <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
             <span>{errorMsg}</span>
+          </div>
+        )}
+
+        {selectedCourse?.returnedAt && selectedCourse.returnNote && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-900 shadow-xs font-sans">
+            <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-bold text-sm">The department sent this course back</h3>
+              <p className="text-xs mt-1 whitespace-pre-wrap">{selectedCourse.returnNote}</p>
+              <p className="text-xs mt-1">Correct the marks, then submit them again.</p>
+            </div>
           </div>
         )}
 
@@ -5124,9 +5175,9 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
         {courses.length === 0 ? (
           <div className="bg-white border border-dashed border-slate-300 p-12 rounded-3xl text-center max-w-md mx-auto my-12 shadow-sm font-sans">
             <BookOpen className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-            <h3 className="text-lg font-bold text-slate-800 mb-2">No Courses Assigned</h3>
+            <h3 className="text-lg font-bold text-slate-800 mb-2">No Current Courses</h3>
             <p className="text-xs text-slate-600 mb-6 leading-relaxed">
-              You are currently not assigned any courses. Please contact your Department Administration or QA focal person to assign courses to your profile.
+              You have no courses to mark right now. Courses you have submitted are in Past Courses. If you should have a new course, please contact your Department Administration or QA focal person.
             </p>
           </div>
         ) : (
@@ -5967,6 +6018,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                     handleClearInlineQuestions={handleClearInlineQuestions}
                     handleOpenUnitEditor={handleOpenUnitEditor}
                     onShowNotification={showNotification}
+                    onDirtyChange={setMarksDirty}
                   />
 
                   {false && (() => {
@@ -8870,6 +8922,15 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
 
 
       <AnimatePresence>
+        {submitCourseId && selectedCourse && (
+          <SubmitFinalMarksDialog
+            courseId={submitCourseId}
+            courseLabel={`${selectedCourse.code} — ${selectedCourse.title}${selectedCourse.academicYear ? ` (${selectedCourse.academicYear.replace(/-/g, ' ')})` : ''}`}
+            onClose={() => setSubmitCourseId(null)}
+            onSubmitted={handleSubmitted}
+          />
+        )}
+        {showPastCourses && <PastCoursesDialog onClose={() => setShowPastCourses(false)} />}
         {notification && (
           <Toast
             message={notification.message}

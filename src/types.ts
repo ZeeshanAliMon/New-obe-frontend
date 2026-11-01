@@ -87,6 +87,33 @@ export interface CourseStudent {
   name: string;
   marks?: Record<string, number>;
   student_marks?: Record<string, number>;
+  resultStatus?: StudentResultStatus;
+}
+
+// '' = graded normally. Absent: missing marks count as 0. Withdrawn: grade W, not in GPA.
+export type StudentResultStatus = '' | 'absent' | 'withdrawn';
+
+export interface SubmissionCheck {
+  courseId: string;
+  code: string;
+  title: string;
+  academicYear: string;
+  errors: string[];
+  missing: { regNo: string; name: string; items: string[] }[];
+  warnings: string[];
+  students: { regNo: string; name: string; resultStatus: StudentResultStatus }[];
+}
+
+export interface PastCourse {
+  id: string;
+  code: string;
+  title: string;
+  programCode: string;
+  academicYear: string;
+  state: 'submitted' | 'finalized';
+  submittedAt: string | null;
+  closedAt: string | null;
+  students: { regNo: string; name: string; resultStatus: StudentResultStatus; percentage: number; grade: string }[];
 }
 
 export interface OBEQuestion {
@@ -121,4 +148,7 @@ export interface InstructorCourse {
   customGradingSystem?: { grade: string; percentage: string; points: string }[];
   academicYear?: string;
   status?: 'active' | 'closed';
+  submittedAt?: string | null;
+  returnedAt?: string | null;
+  returnNote?: string;
 }

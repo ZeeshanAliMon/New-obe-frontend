@@ -1,4 +1,4 @@
-import { OBEData, Department, Program, GA, Course, ProgramObjective, InstructorCourse, Student } from '../types';
+import { OBEData, Department, Program, GA, Course, ProgramObjective, InstructorCourse, Student, PastCourse, StudentResultStatus, SubmissionCheck } from '../types';
 import { DEFAULT_TEMP_PASSWORD } from '../utils/config';
 
 export const BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://zeeshanbalti.pythonanywhere.com/api';
@@ -841,7 +841,7 @@ export const apiService = {
             const regNo = s.regNo || s.reg_no || s.registration_no || s.registrationNo || '';
             const name = s.name || s.student_name || s.studentName || '';
             const marks = s.student_marks || s.marks || s.obtained_marks || s.obtainedMarks || s.studentMarks || {};
-            return { regNo, reg_no: regNo, name, marks, student_marks: marks, studentMarks: marks };
+            return { regNo, reg_no: regNo, name, marks, student_marks: marks, studentMarks: marks, resultStatus: s.resultStatus || '' };
           });
         } else {
           ic.students = [];
@@ -955,7 +955,7 @@ export const apiService = {
             const regNo = s.regNo || s.reg_no || s.registration_no || s.registrationNo || '';
             const name = s.name || s.student_name || s.studentName || '';
             const marks = s.student_marks || s.marks || s.obtained_marks || s.obtainedMarks || s.studentMarks || {};
-            return { regNo, reg_no: regNo, name, marks, student_marks: marks, studentMarks: marks };
+            return { regNo, reg_no: regNo, name, marks, student_marks: marks, studentMarks: marks, resultStatus: s.resultStatus || '' };
           });
         }
         ic.obe_marks = ic.obe_marks || ic.obeMarks || {};
@@ -1303,15 +1303,74 @@ export const apiService = {
     return res.json();
   },
 
-  async finalizeCourse(courseId: string, academicYear: string): Promise<{ message: string }> {
+  async finalizeCourse(courseId: string, academicYear: string, overrideNotSubmitted = false): Promise<{ message: string }> {
     const res = await fetchWithTimeout(`${BASE_URL}/admin/finalize-course/`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ courseId, academicYear }),
+      body: JSON.stringify({ courseId, academicYear, overrideNotSubmitted }),
     }, 8000);
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.detail || errData.error || errData.message || 'Failed to finalize course');
+      const details = Array.isArray(errData.details) ? ` ${errData.details.join(' ')}` : '';
+      throw new Error((errData.detail || errData.error || errData.message || 'Failed to finalize course') + details);
+    }
+    return res.json();
+  },
+
+  async returnCourse(courseId: string, note: string): Promise<void> {
+    const res = await fetchWithTimeout(`${BASE_URL}/admin/return-course/`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ courseId, note }),
+    }, 8000);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.error || errData.message || 'Failed to send the course back');
+    }
+  },
+
+  async getSubmissionCheck(courseId: string): Promise<SubmissionCheck> {
+    const res = await fetchWithTimeout(`${BASE_URL}/instructor/courses/${encodeURIComponent(courseId)}/submit/`, {
+      headers: getHeaders(),
+    }, 20000);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.error || 'Could not check this course');
+    }
+    return res.json();
+  },
+
+  async submitFinalMarks(courseId: string, acknowledgeWarnings: boolean): Promise<void> {
+    const res = await fetchWithTimeout(`${BASE_URL}/instructor/courses/${encodeURIComponent(courseId)}/submit/`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ acknowledgeWarnings }),
+    }, 20000);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.error || 'Could not submit final marks');
+    }
+  },
+
+  async setStudentResultStatus(courseId: string, regNo: string, resultStatus: StudentResultStatus): Promise<void> {
+    const res = await fetchWithTimeout(`${BASE_URL}/instructor/courses/${encodeURIComponent(courseId)}/student-status/`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify({ regNo, resultStatus }),
+    }, 8000);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.error || 'Could not update this student');
+    }
+  },
+
+  async getPastCourses(): Promise<PastCourse[]> {
+    const res = await fetchWithTimeout(`${BASE_URL}/instructor/past-courses/`, {
+      headers: getHeaders(),
+    }, 20000);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.error || 'Could not load past courses');
     }
     return res.json();
   },

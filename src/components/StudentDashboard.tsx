@@ -1817,7 +1817,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
 
     // 1. Process enrolled courses with grades
     enrolledCoursesWithGrades.forEach(c => {
-      if (c.results && c.results.hasAnyMarks && c.results.isCompleted) {
+      if (c.results && c.results.hasAnyMarks && c.results.isCompleted && c.results.letterGrade !== 'W') {
         courseGPAs[c.code] = {
           points: c.results.points,
           credits: c.creditHours || 3,
@@ -1828,6 +1828,11 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
 
     // 2. Merge with finalTranscripts (which is the server-side finalized records)
     finalTranscripts.forEach(t => {
+      // Withdrawn: on the transcript, but not in the GPA or credits.
+      if (t.grade === 'W') {
+        delete courseGPAs[t.courseCode];
+        return;
+      }
       const pts = t.gradePoints ?? t.points ?? 0;
       courseGPAs[t.courseCode] = {
         points: pts,
@@ -1869,7 +1874,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
 
       semCourses.forEach(c => {
         const crHrs = c.creditHours || 3;
-        if (c.results && c.results.points !== undefined && c.results.hasAnyMarks && c.results.isCompleted) {
+        if (c.results && c.results.points !== undefined && c.results.hasAnyMarks && c.results.isCompleted && c.results.letterGrade !== 'W') {
           totalPointsProduct += c.results.points * crHrs;
           totalCredits += crHrs;
           hasGrades = true;
@@ -1964,7 +1969,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
         // 'Pending' (and '-' / empty) is not a grade. It used to be counted here
         // with 0 points, dragging the printed semester GPA down: one B plus five
         // pending courses printed as 0.50 while the CGPA said 3.00.
-        if (pts !== undefined && letter && letter !== '-' && letter !== 'Pending') {
+        if (pts !== undefined && letter && letter !== '-' && letter !== 'Pending' && letter !== 'W') {
           totalPointsProduct += pts * crHrs;
           totalCredits += crHrs;
           hasGrades = true;
@@ -1983,7 +1988,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
       courses.forEach((c: any) => {
         const grade = c.results?.letterGrade;
         // Earned = passed. Pending courses were being counted as earned credits.
-        if (grade && grade !== 'F' && grade !== '-' && grade !== '' && grade !== 'Pending') {
+        if (grade && grade !== 'F' && grade !== '-' && grade !== '' && grade !== 'Pending' && grade !== 'W') {
           total += (c.creditHours || 3);
         }
       });
