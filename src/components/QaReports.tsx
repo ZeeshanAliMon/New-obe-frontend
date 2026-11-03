@@ -101,7 +101,7 @@ export function CoSummaryReport({ data, ctx, threshold }: { data: any; ctx: Repo
                   return (
                     <tr key={i}>
                       <td className={`${td} font-semibold`}>{c.courseCode}</td>
-                      <td className={td}>{c.courseTitle}</td>
+                      <td className={td}>{c.courseTitle}{c.academicYear ? ` — ${termLabel(c.academicYear)}` : ''}</td>
                       <td className={`${td} text-center`}>{(c.clos || []).filter(met).length} / {(c.clos || []).length}</td>
                       <td className={`${td} text-center`}>{a == null ? '—' : pct1(a)}</td>
                       <td className={`${td} text-center ${statusCls(a != null && a >= threshold)}`}>{a == null ? '—' : a >= threshold ? 'Met' : 'Not Met'}</td>
@@ -279,7 +279,7 @@ export function InstructorPerformanceReport({ data, ctx, threshold }: { data: an
           <table className="w-full border-collapse text-[11.5px]">
             <thead>
               <tr className="bg-slate-300">
-                <th className={`${th} w-24`}>Course</th>
+                <th className={`${th} w-32`}>Course</th>
                 <th className={th}>Title</th>
                 <th className={`${th} w-28 text-center`}>Term</th>
                 <th className={`${th} w-20 text-center`}>Semester</th>
@@ -299,7 +299,7 @@ export function InstructorPerformanceReport({ data, ctx, threshold }: { data: an
                   <tr><td className={`${td} italic text-slate-500`} colSpan={6}>No active courses.</td></tr>
                 ) : (inst.courses || []).map((c: any, j: number) => (
                   <tr key={j}>
-                    <td className={td}>{c.courseCode}</td>
+                    <td className={td}>{c.courseCode}{c.programCode ? ` (${c.programCode})` : ''}</td>
                     <td className={td}>{c.courseTitle}</td>
                     <td className={`${td} text-center`}>{termLabel(c.academicYear) || '—'}</td>
                     <td className={`${td} text-center`}>{c.semester || '—'}</td>
@@ -420,7 +420,7 @@ export function CohortComparisonReport({ data, ctx, threshold }: { data: any; ct
   const termKey = (t: string) => { const m = String(t).match(/(spring|summer|fall)\D*(\d{4})/i); return m ? Number(m[2]) * 10 + ['spring', 'summer', 'fall'].indexOf(m[1].toLowerCase()) : 99999; };
   // Without a GA filter the backend sends one overall figure per year (no gaId on the rows).
   const ALL = '__all__';
-  const gaOf = (c: any) => String(c.gaId ?? data.gaId ?? ALL);
+  const gaOf = (c: any) => String(c.gaId || data.gaId || ALL);   // the backend sends gaId '' for "all"
   const gaName = (ga: string) => (ga === ALL ? 'All GAs' : ctx.gaLabel(ga));
   const gas: string[] = Array.from(new Set(cohorts.map(gaOf))).sort((a, b) => lastNum(a) - lastNum(b));
   const years: string[] = Array.from(new Set(cohorts.map(c => String(c.academicYear)))).sort((a, b) => termKey(a) - termKey(b) || a.localeCompare(b));

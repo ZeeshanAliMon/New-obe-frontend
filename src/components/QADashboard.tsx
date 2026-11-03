@@ -1135,7 +1135,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
         ) : (
           <div className="max-w-[1700px] mx-auto space-y-6">
 
-            {activeProgramId === '' && activeModule !== 'vision_mission' ? (
+            {activeProgramId === '' && activeModule !== 'vision_mission' && activeModule !== 'more_reports' ? (
               <div className="max-w-xl mx-auto py-16 px-8 text-center bg-white border border-slate-200 rounded-3xl shadow-sm animate-in fade-in duration-300">
                 <GraduationCap className="w-14 h-14 text-indigo-900/30 mx-auto mb-4" />
                 <h3 className="font-serif font-bold text-lg text-slate-900 mb-2">No Program Selected</h3>
@@ -1896,7 +1896,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                   <div className="flex flex-wrap gap-4 items-end">
 
                     {/* Program — needed for most reports */}
-                    {['ga_program','ga_course','ga_student','clo_attainment','co_summary','po_attainment','at_risk','gap_analysis','cohort_comparison'].includes(moreReportType) && (
+                    {['ga_program','ga_batch','ga_course','ga_student','clo_attainment','co_summary','po_attainment','at_risk','gap_analysis','cohort_comparison'].includes(moreReportType) && (
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Programme</label>
                         <select
@@ -2110,8 +2110,11 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                             if (!moreReportProgramId) throw new Error('Please select a programme.');
                             result = await get(`/reports/program-ga-attainment/?programId=${encodeURIComponent(moreReportProgramId)}`);
                           } else if (moreReportType === 'ga_batch') {
+                            // One programme at a time: programmes have separate GAs, so mixing
+                            // them repeats every GA column and fails the other programme's students.
+                            if (!moreReportProgramId) throw new Error('Please select a programme.');
                             if (!moreReportBatch) throw new Error('Please select a batch.');
-                            result = await get(`/reports/batch-ga-attainment/?batch=${encodeURIComponent(moreReportBatch)}&departmentId=${encodeURIComponent(activeDeptId)}`);
+                            result = await get(`/reports/batch-ga-attainment/?batch=${encodeURIComponent(moreReportBatch)}&departmentId=${encodeURIComponent(activeDeptId)}&programId=${encodeURIComponent(moreReportProgramId)}`);
                           } else if (moreReportType === 'ga_student') {
                             if (!moreReportRegNo) throw new Error('Please select a student.');
                             result = await get(`/reports/student-ga-questions/?regNo=${encodeURIComponent(moreReportRegNo)}`);

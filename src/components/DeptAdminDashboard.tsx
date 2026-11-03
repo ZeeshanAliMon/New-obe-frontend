@@ -508,6 +508,9 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
           if (isBackend) {
             const dbBindings: StudentCourseBinding[] = [];
             fetchedAssignments.forEach((a: any) => {
+              // Bindings only hold a course code, so a past term's roster would
+              // count as enrolled in the same code's next offering.
+              if (a.status === 'closed' || a.submittedAt) return;
               const studentsList = a.students || a.enrolled_students || a.enrolledStudents || a.student_list || a.studentList || [];
               if (Array.isArray(studentsList)) {
                 studentsList.forEach((s: any) => {
@@ -589,7 +592,9 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
       // Automatically sync to instructor courses on load of Admin dashboard
       // Deferred a tick so the dashboard appears first; the sync is background work.
       const courseSnapshot = obData.courses || [];
-      setTimeout(() => syncToInstructorCourses(courseSnapshot, loadedTeachers, loadedAssignments, activeBindings, studentList), 0);
+      // Rosters were just read from the server, so nothing is sent back: opening the
+      // dashboard must not change enrollment.
+      setTimeout(() => syncToInstructorCourses(courseSnapshot, loadedTeachers, loadedAssignments, activeBindings, studentList, undefined, false), 0);
 
     } catch (err: any) {
       console.error(err);
@@ -609,7 +614,8 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     currentStudents: Student[],
     // Course codes whose roster must be sent even if it is now EMPTY (a reset
     // can leave a course with nobody; the server only clears it if told so).
-    forceSyncCodes?: Set<string>
+    forceSyncCodes?: Set<string>,
+    pushEnrollments: boolean = true
   ) => {
     // 1. Get existing InstructorCourses list
     let existingInstructorCourses: InstructorCourse[] = [];
@@ -692,8 +698,11 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
 
       // Find matching students for this course based on bindings
       const boundHere = boundStudentsByCode.get(normalizeCourseCode(assignment.courseCode));
+      // A code shared by two programs has one section per program; each section
+      // takes only its own program's students.
       const courseStudents = currentStudents
         .filter(s => !!boundHere && boundHere.has(s))
+        .filter(s => !assignment.programId || areProgramsCompatible(assignment.programId, s.programId))
         .map(s => {
           // Preserve existing marks if student was already in this course
           const existingCourse = existingInstructorCourses.find(ec => ec.id === uniqId) || 
@@ -814,6 +823,8 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
       // Assignments are managed through course assignments, and student enrollment is done via enrollStudents.
       console.log('[DEBUG DeptAdmin] Bypassing saveInstructorCourses call in backend mode to avoid permission checks.');
     }
+
+    if (!pushEnrollments) return;
 
     // Sync enrollments to backend sequentially to avoid SQLite database locks (500 errors)
     (async () => {
