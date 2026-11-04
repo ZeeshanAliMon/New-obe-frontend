@@ -33,10 +33,11 @@ import {
   CheckCircle2,
   ArrowRight,
   Edit,
-  History
+  History, ClipboardList
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import FacultyDirectoryTab from './admin/FacultyDirectoryTab';
+import SurveyManager from './surveys/SurveyManager';
 import PastCourseEntryTab from './admin/PastCourseEntryTab';
 import { matchTeacher, getTeacherId } from '../utils/teacherUtils';
 import { AnimatePresence } from 'motion/react';
@@ -220,7 +221,7 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
     return departments.find(d => d.id === activeDeptId);
   }, [departments, activeDeptId]);
 
-  const [activeTab, setActiveTab] = useState<'semester-plans' | 'courses' | 'teachers' | 'teacher-assignments' | 'student-enrollment' | 'past-courses'>('semester-plans');
+  const [activeTab, setActiveTab] = useState<'semester-plans' | 'courses' | 'teachers' | 'teacher-assignments' | 'student-enrollment' | 'past-courses' | 'surveys'>('semester-plans');
   const [pastEntry, setPastEntry] = useState<{ id: string; teacherName: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -2390,6 +2391,17 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
             <History className="w-4 h-4" />
             <span>Past Course Entry</span>
           </button>
+          <button
+            onClick={() => setActiveTab('surveys')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'surveys'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <ClipboardList className="w-4 h-4" />
+            <span>Surveys</span>
+          </button>
         </div>
       </div>
 
@@ -2417,6 +2429,8 @@ export default function DeptAdminDashboard({ onLogout, adminName = "Department A
         {/* ACTIVE MODULE CONTAINER */}
         <section className="w-full">
           
+          {activeTab === 'surveys' && <SurveyManager programs={adminPrograms} canEdit={false} />}
+
           {activeTab === 'past-courses' && (
             <PastCourseEntryTab
               programs={adminPrograms}

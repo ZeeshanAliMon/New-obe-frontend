@@ -7,7 +7,8 @@ import GaBatchReport from './GaBatchReport';
 import StudentGaTranscript from './StudentGaTranscript';
 import ProgramGaReport from './ProgramGaReport';
 import CourseCloReport from './CourseCloReport';
-import { CoSummaryReport, PoAttainmentReport, AtRiskReport, InstructorPerformanceReport, GapAnalysisReport, CohortComparisonReport } from './QaReports';
+import { CoSummaryReport, PoAttainmentReport, AtRiskReport, InstructorPerformanceReport, GapAnalysisReport, CohortComparisonReport, CohortLevelGaReport } from './QaReports';
+import SurveyManager from './surveys/SurveyManager';
 import { 
   Check, 
   Settings, 
@@ -51,7 +52,7 @@ interface QADashboardProps {
   onLogout: () => void;
 }
 
-type ActiveViewModule = 'allocation' | 'po_mapping' | 'vision_mission' | 'po_configure' | 'more_reports';
+type ActiveViewModule = 'allocation' | 'po_mapping' | 'vision_mission' | 'po_configure' | 'more_reports' | 'surveys';
 
 function naturalCompare(s1: string, s2: string): number {
   const aParts = s1.split(/(\d+)/);
@@ -103,7 +104,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
   const [isEditingPoInline, setIsEditingPoInline] = useState<boolean>(false);
 
   // More Reports state
-  const [moreReportType, setMoreReportType] = useState<'ga_program' | 'ga_batch' | 'ga_course' | 'ga_student' | 'clo_attainment' | 'po_attainment' | 'co_summary' | 'at_risk' | 'gap_analysis' | 'instructor_performance' | 'cohort_comparison' | 'clo_cqi'>('ga_program');
+  const [moreReportType, setMoreReportType] = useState<'cohort_ga' | 'ga_program' | 'ga_batch' | 'ga_course' | 'ga_student' | 'clo_attainment' | 'po_attainment' | 'co_summary' | 'at_risk' | 'gap_analysis' | 'instructor_performance' | 'cohort_comparison' | 'clo_cqi'>('ga_program');
   const [moreReportProgramId, setMoreReportProgramId] = useState<string>('');
   const [moreReportBatch, setMoreReportBatch] = useState<string>('');
   const [moreReportSemester, setMoreReportSemester] = useState<string>('');
@@ -131,6 +132,8 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
   };
   const [moreReportCourseCode, setMoreReportCourseCode] = useState<string>('');
   const [moreReportGaId, setMoreReportGaId] = useState<string>('');
+  const [moreReportGradYear, setMoreReportGradYear] = useState<string>('');
+  const [moreReportGradYears, setMoreReportGradYears] = useState<number[]>([]);
   const [moreReportData, setMoreReportData] = useState<any>(null);
   const [moreReportLoading, setMoreReportLoading] = useState(false);
   const [moreReportError, setMoreReportError] = useState<string | null>(null);
@@ -993,6 +996,13 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
               Reports
             </button>
 
+            <button
+              onClick={() => { setActiveModule('surveys'); setOpenMenu(null); }}
+              className={`px-3 py-1 text-xs font-sans font-semibold rounded cursor-pointer transition-all ${activeModule === 'surveys' ? 'bg-indigo-900 text-white shadow-sm font-bold' : 'text-slate-700 hover:bg-slate-200 hover:text-slate-900'}`}
+            >
+              Surveys
+            </button>
+
             {/* ABOUT MENU */}
             <div className="relative">
               <button
@@ -1135,7 +1145,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
         ) : (
           <div className="max-w-[1700px] mx-auto space-y-6">
 
-            {activeProgramId === '' && activeModule !== 'vision_mission' && activeModule !== 'more_reports' ? (
+            {activeProgramId === '' && activeModule !== 'vision_mission' && activeModule !== 'more_reports' && activeModule !== 'surveys' ? (
               <div className="max-w-xl mx-auto py-16 px-8 text-center bg-white border border-slate-200 rounded-3xl shadow-sm animate-in fade-in duration-300">
                 <GraduationCap className="w-14 h-14 text-indigo-900/30 mx-auto mb-4" />
                 <h3 className="font-serif font-bold text-lg text-slate-900 mb-2">No Program Selected</h3>
@@ -1851,6 +1861,10 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
             {/* ═══════════════════════════════════════════════════════════════
                 MORE REPORTS MODULE
             ═══════════════════════════════════════════════════════════════ */}
+            {activeModule === 'surveys' && (
+              <SurveyManager programs={(data?.programs || []).filter(p => !activeDeptId || p.departmentId === activeDeptId)} canEdit />
+            )}
+
             {activeModule === 'more_reports' && (
               <div className="space-y-4 max-w-7xl mx-auto animate-in duration-200 fade-in-25">
 
@@ -1862,17 +1876,18 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {[
-                      { id: 'ga_program',            label: 'GA Attainment\nby Program',       icon: <Award className="w-5 h-5" />,          color: 'indigo' },
-                      { id: 'ga_batch',              label: 'GA Attainment\nby Batch',          icon: <Users className="w-5 h-5" />,          color: 'violet' },
-                      { id: 'ga_course',             label: 'GA Attainment\nby Course',         icon: <Users className="w-5 h-5" />,          color: 'indigo' },
-                      { id: 'ga_student',            label: 'GA Attainment\nby Student',        icon: <UserCheck className="w-5 h-5" />,      color: 'indigo' },
+                      { id: 'cohort_ga',             label: 'Cohort Level\nGA Attainment',    icon: <Award className="w-5 h-5" />,          color: 'indigo' },
+                      { id: 'ga_program',            label: 'Direct Assessment of GA\nby Program',       icon: <Award className="w-5 h-5" />,          color: 'indigo' },
+                      { id: 'ga_batch',              label: 'Direct Assessment of GA\nby Batch',          icon: <Users className="w-5 h-5" />,          color: 'violet' },
+                      { id: 'ga_course',             label: 'Direct Assessment of GA\nby Course',         icon: <Users className="w-5 h-5" />,          color: 'indigo' },
+                      { id: 'ga_student',            label: 'Direct Assessment of GA\nby Student',        icon: <UserCheck className="w-5 h-5" />,      color: 'indigo' },
                       { id: 'clo_attainment',        label: 'CLO Attainment\nby Course',        icon: <Target className="w-5 h-5" />,         color: 'blue' },
                       { id: 'co_summary',            label: 'CO Attainment\nSummary (HEC)',     icon: <FileText className="w-5 h-5" />,       color: 'sky' },
                       { id: 'po_attainment',         label: 'PO Attainment\n(HEC Compliance)',  icon: <BarChart2 className="w-5 h-5" />,      color: 'teal' },
                       { id: 'at_risk',               label: 'At-Risk\nStudents',                icon: <AlertTriangle className="w-5 h-5" />,  color: 'amber' },
                       { id: 'gap_analysis',          label: 'Curriculum\nGap Analysis',         icon: <GitBranch className="w-5 h-5" />,      color: 'orange' },
                       { id: 'instructor_performance',label: 'Instructor\nPerformance',          icon: <UserCheck className="w-5 h-5" />,      color: 'rose' },
-                      { id: 'cohort_comparison',     label: 'Cohort\nComparison',               icon: <TrendingUp className="w-5 h-5" />,     color: 'green' },
+                      { id: 'cohort_comparison',     label: 'Term\nComparison',               icon: <TrendingUp className="w-5 h-5" />,     color: 'green' },
                       { id: 'clo_cqi',               label: 'CLO CQI\n(Instructor-wise)',       icon: <BarChart2 className="w-5 h-5" />,      color: 'indigo' },
                     ].map(rt => (
                       <button
@@ -1896,7 +1911,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                   <div className="flex flex-wrap gap-4 items-end">
 
                     {/* Program — needed for most reports */}
-                    {['ga_program','ga_batch','ga_course','ga_student','clo_attainment','co_summary','po_attainment','at_risk','gap_analysis','cohort_comparison'].includes(moreReportType) && (
+                    {['cohort_ga','ga_program','ga_batch','ga_course','ga_student','clo_attainment','co_summary','po_attainment','at_risk','gap_analysis','cohort_comparison'].includes(moreReportType) && (
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Programme</label>
                         <select
@@ -2088,6 +2103,21 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                       </div>
                     )}
 
+                    {/* Graduation year for PO Attainment: the years come with the report */}
+                    {moreReportType === 'po_attainment' && (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Graduates (surveys)</label>
+                        <select
+                          value={moreReportGradYear}
+                          onChange={e => { setMoreReportGradYear(e.target.value); setMoreReportData(null); }}
+                          className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[150px]"
+                        >
+                          <option value="">All graduation years</option>
+                          {moreReportGradYears.map(y => <option key={y} value={y}>Graduated {y}</option>)}
+                        </select>
+                      </div>
+                    )}
+
                     {/* Generate Button */}
                     <button
                       onClick={async () => {
@@ -2106,7 +2136,10 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                             return r.json();
                           };
 
-                          if (moreReportType === 'ga_program') {
+                          if (moreReportType === 'cohort_ga') {
+                            if (!moreReportProgramId) throw new Error('Please select a programme.');
+                            result = await get(`/reports/cohort-ga/?programId=${encodeURIComponent(moreReportProgramId)}`);
+                          } else if (moreReportType === 'ga_program') {
                             if (!moreReportProgramId) throw new Error('Please select a programme.');
                             result = await get(`/reports/program-ga-attainment/?programId=${encodeURIComponent(moreReportProgramId)}`);
                           } else if (moreReportType === 'ga_batch') {
@@ -2138,7 +2171,10 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                             result = await get(`/reports/co-attainment-summary/?${params}`);
                           } else if (moreReportType === 'po_attainment') {
                             if (!moreReportProgramId) throw new Error('Please select a programme.');
-                            result = await get(`/reports/po-attainment/?programId=${encodeURIComponent(moreReportProgramId)}`);
+                            const params = new URLSearchParams({ programId: moreReportProgramId });
+                            if (moreReportGradYear) params.set('graduationYear', moreReportGradYear);
+                            result = await get(`/reports/po-attainment/?${params}`);
+                            setMoreReportGradYears(result.graduationYears || []);
                           } else if (moreReportType === 'at_risk') {
                             if (!moreReportProgramId) throw new Error('Please select a programme.');
                             const params = new URLSearchParams({ programId: moreReportProgramId });
@@ -2380,7 +2416,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                           {counted.length > 0 && (
                             <div className="border border-slate-200 rounded-2xl overflow-hidden">
                               <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
-                                <span className="text-xs font-black text-slate-700">Student GA attainment</span>
+                                <span className="text-xs font-black text-slate-700">Student direct assessment of GA</span>
                                 <span className="text-[10px] text-slate-500">questions passed / questions for the GA</span>
                               </div>
                               <div className="max-h-[420px] overflow-auto">
@@ -2435,6 +2471,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                       const prog = (data?.programs || []).find(p => p.id === moreReportProgramId);
                       const ctx = { departmentName: activeDepartment?.name, programName: prog?.name, programCode: prog?.code?.toUpperCase(), gaLabel };
                       const t = reportThreshold(moreReportData);
+                      if (moreReportType === 'cohort_ga' && moreReportData.attributes) return <CohortLevelGaReport data={moreReportData} ctx={ctx} threshold={t} />;
                       if (moreReportType === 'co_summary' && moreReportData.courses) return <CoSummaryReport data={moreReportData} ctx={ctx} threshold={t} />;
                       if (moreReportType === 'po_attainment' && moreReportData.pos) return <PoAttainmentReport data={moreReportData} ctx={ctx} threshold={t} />;
                       if (moreReportType === 'at_risk' && moreReportData.students) return <AtRiskReport data={moreReportData} ctx={ctx} threshold={t} />;

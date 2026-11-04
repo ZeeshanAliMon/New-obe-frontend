@@ -13,7 +13,7 @@ export interface GaTranscriptDoc {
   gas: GaTranscriptGa[];
 }
 
-export const GA_TRANSCRIPT_NOTE = 'This report shows the running GA attainment of the student. Final GA attainment will be achieved at the completion of the programme.';
+export const GA_TRANSCRIPT_NOTE = 'This report shows the running direct assessment of GA of the student. The final result will be achieved at the completion of the programme.';
 
 const LEFT = 12;
 const RIGHT = 198;

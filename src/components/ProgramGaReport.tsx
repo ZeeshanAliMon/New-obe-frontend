@@ -5,16 +5,16 @@ import ReportChartBlock from './ReportChartBlock';
 import { SummaryChart } from './StudentGaTranscript';
 
 /**
- * Programme GA Attainment Report.
+ * Programme Direct Assessment of GA Report.
  *
- * For each GA: the courses mapped to it with the class average and an
- * Attained / Not Attained status, then a GA summary table and a bar chart of
+ * For each GA: the courses mapped to it with the percentage of students who
+ * attain it and an Attained / Not Attained status, then a GA summary table and a bar chart of
  * the summary. The whole report downloads as a PDF; the chart (shown once) also
  * downloads on its own as PDF / PNG.
  */
 
-interface ProgramCourse { code: string; title: string; averageMarks: number; studentCount?: number }
-interface ProgramAttribute { id: string; title: string; averageAttainment: number; contributingCoursesCount: number; attainmentStatus: string; contributingCourses: ProgramCourse[] }
+interface ProgramCourse { code: string; title: string; score: number; studentsAttained?: number; studentCount?: number; attained?: boolean }
+interface ProgramAttribute { id: string; title: string; averageAttainment: number; contributingCoursesCount: number; coursesAttained?: number; kpiMet?: boolean; attainmentStatus: string; contributingCourses: ProgramCourse[] }
 
 const UNIVERSITY_NAME = 'Iqra University';
 
@@ -26,13 +26,14 @@ export default function ProgramGaReport({ data, labelOf }: { data: any; labelOf:
   const gaNum = (id: string) => { const m = String(id).match(/(\d+)(?!.*\d)/); return m ? parseInt(m[1], 10) : 9999; };
   const attributes: ProgramAttribute[] = [...(data.attributes || [])].sort((a, b) => gaNum(a.id) - gaNum(b.id));
   const attained = (v: number) => v >= threshold;
-  const gaStatus = (ga: ProgramAttribute) => (ga.contributingCoursesCount > 0 && attained(ga.averageAttainment ?? 0) ? 'Attained' : 'Not Attained');
+  // The framework's KPI: at least half of the mapped courses attain the GA.
+  const gaStatus = (ga: ProgramAttribute) => (ga.kpiMet ? 'Attained' : 'Not Attained');
   // Shape the shared summary chart expects.
   const chartGas = attributes.map(ga => ({ gaId: ga.id, gaTitle: ga.title, score: ga.averageAttainment ?? 0, status: gaStatus(ga), attainedCount: 0, courseCount: 0, courses: [] }));
   const attainedCount = chartGas.filter(g => g.status === 'Attained').length;
 
   const printed = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
-  const fileBase = `GA_Attainment_${data.programCode || data.programId || 'Programme'}`.replace(/[^\w.-]+/g, '_');
+  const fileBase = `Direct_Assessment_GA_${data.programCode || data.programId || 'Programme'}`.replace(/[^\w.-]+/g, '_');
 
   const run = async () => {
     if (!reportRef.current) return;
@@ -74,7 +75,7 @@ export default function ProgramGaReport({ data, labelOf }: { data: any; labelOf:
           <div className="text-center">
             <h2 className="text-xl font-bold">{UNIVERSITY_NAME}</h2>
             <p className="text-base font-bold">{data.departmentName}{data.programCode ? ` (${data.programCode})` : ''}</p>
-            <p className="text-sm font-bold">Programme GA Attainment Report</p>
+            <p className="text-sm font-bold">Programme Direct Assessment of GA Report</p>
           </div>
           {info}
           <p className="text-right text-[12px]"><b>GA KPI :</b> {threshold.toFixed(1)}</p>
@@ -88,7 +89,7 @@ export default function ProgramGaReport({ data, labelOf }: { data: any; labelOf:
                   <th className={`${th} w-24`}>Course Code</th>
                   <th className={th}>Course Title</th>
                   <th className={`${th} w-20 text-center`}>Students</th>
-                  <th className={`${th} w-24 text-center`}>Class Avg %</th>
+                  <th className={`${th} w-24 text-center`}>Students Attained %</th>
                   <th className={`${th} w-28 text-center`}>GA Status</th>
                 </tr>
               </thead>
@@ -106,8 +107,8 @@ export default function ProgramGaReport({ data, labelOf }: { data: any; labelOf:
                         <td className={td}>{c.code}</td>
                         <td className={td}>{c.title}</td>
                         <td className={`${td} text-center`}>{c.studentCount ?? '—'}</td>
-                        <td className={`${td} text-center`}>{Number(c.averageMarks ?? 0).toFixed(1)}</td>
-                        <td className={`${td} text-center ${attained(c.averageMarks ?? 0) ? '' : 'text-red-700 font-semibold'}`}>{attained(c.averageMarks ?? 0) ? 'Attained' : 'Not Attained'}</td>
+                        <td className={`${td} text-center`}>{Number(c.score ?? 0).toFixed(1)}</td>
+                        <td className={`${td} text-center ${attained(c.score ?? 0) ? '' : 'text-red-700 font-semibold'}`}>{attained(c.score ?? 0) ? 'Attained' : 'Not Attained'}</td>
                       </tr>
                     ))
                   )}
@@ -137,7 +138,7 @@ export default function ProgramGaReport({ data, labelOf }: { data: any; labelOf:
                         <td className={`${td} font-semibold`}>{labelOf(ga.id)}</td>
                         <td className={td}>{ga.title}</td>
                         <td className={`${td} text-center`}>{(ga.averageAttainment ?? 0).toFixed(1)}</td>
-                        <td className={`${td} text-center`}>{ga.contributingCourses.filter(c => attained(c.averageMarks ?? 0)).length} / {ga.contributingCourses.length}</td>
+                        <td className={`${td} text-center`}>{ga.coursesAttained ?? 0} / {ga.contributingCourses.length}</td>
                         <td className={`${td} text-center font-semibold ${st === 'Attained' ? 'text-green-700' : 'text-red-700'}`}>{st}</td>
                       </tr>
                     );
@@ -154,7 +155,7 @@ export default function ProgramGaReport({ data, labelOf }: { data: any; labelOf:
           )}
 
           <div data-pdf-block className="text-[11px] pt-2 space-y-1">
-            <p><b>Note:</b> A student's GA attainment in a course is the share of that GA's questions they passed (at {threshold}% of the marks). A course is Attained when its class average of that is at least {threshold}%; a GA's score is the average over its courses.</p>
+            <p><b>Note:</b> A student attains a GA in a course by passing at least {threshold}% of its questions, each passed at {threshold}% of its marks; a repeated course counts at its best attempt. A course's score is the percentage of its students who attain the GA, and the course attains it at {threshold}% or above. A GA's score is the average of its course scores, and it is Attained when at least {threshold}% of its mapped courses attain it.</p>
             <p>Printed Date: {printed}</p>
           </div>
         </div>

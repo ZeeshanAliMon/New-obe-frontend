@@ -1936,7 +1936,7 @@ const MarksheetDocument = ({
         <div className="mt-6 no-print-break font-sans">
           <div className="flex items-end justify-between border-b-2 border-black pb-1">
             <h3 className="text-[13px] font-black uppercase tracking-wide text-slate-900">
-              {reportType === 'clo' ? 'CLO Attainment Summary' : reportType === 'ga' ? 'GA Attainment Summary' : 'Grade Distribution'}
+              {reportType === 'clo' ? 'CLO Attainment Summary' : reportType === 'ga' ? 'Direct Assessment of GA Summary' : 'Grade Distribution'}
             </h3>
             <span className="text-[11.5px] font-bold text-slate-800">
               Total Students: {nStudents}
@@ -7950,7 +7950,7 @@ export default function InstructorDashboard({ onLogout, instructorName = 'Prof. 
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                   <div>
                                     <h4 className="text-sm font-extrabold text-[#111827]">
-                                      Student Individual GA Attainment Ledger
+                                      Student Individual Direct Assessment of GA Ledger
                                     </h4>
                                     <p className="text-[11px] text-slate-500 mt-0.5">
                                       List of students with computed Graduate Attribute aggregates based on mapped Course Outcomes.

@@ -1501,6 +1501,44 @@ export const apiService = {
     return;
   },
 
+  // ── Surveys (QA and department admins only) ─────────────────────────────────
+  async _surveyJson(res: Response) {
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+    return body;
+  },
+
+  async getSurveyForms(programId: string) {
+    return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/forms/?programId=${encodeURIComponent(programId)}`, { headers: getHeaders() }));
+  },
+
+  async saveSurveyMapping(programId: string, formType: string, mapping: Record<number, string>) {
+    return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/mapping/`, {
+      method: 'PUT', headers: getHeaders(), body: JSON.stringify({ programId, formType, mapping }),
+    }));
+  },
+
+  async getSurveyUploads() {
+    return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/uploads/`, { headers: getHeaders() }));
+  },
+
+  async uploadSurveyResponses(payload: { formType: string; year: string; fileName: string; defaultProgramId?: string; rows: any[]; dryRun: boolean }) {
+    return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/uploads/`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(payload),
+    }, 60000));
+  },
+
+  async deleteSurveyUpload(id: number) {
+    const res = await fetchWithTimeout(`${BASE_URL}/surveys/uploads/${id}/`, { method: 'DELETE', headers: getHeaders() });
+    if (!res.ok) throw new Error('Could not delete this upload.');
+  },
+
+  async getSurveyResults(programId: string, formType: string, year?: string) {
+    const params = new URLSearchParams({ programId, formType });
+    if (year) params.set('year', year);
+    return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/results/?${params}`, { headers: getHeaders() }));
+  },
+
   async getProgramGAAttainment(programId: string) {
     const res = await fetchWithTimeout(`${BASE_URL}/reports/program-ga-attainment/?programId=${encodeURIComponent(programId.toLowerCase())}`, {
       headers: getHeaders()

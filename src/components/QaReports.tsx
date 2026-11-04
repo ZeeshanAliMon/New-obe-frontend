@@ -3,9 +3,9 @@ import ReportChartBlock from './ReportChartBlock';
 import { ReportBarChart, ReportGroupedBarChart, RC } from './ReportBarCharts';
 
 /**
- * Printable QA reports: CO Attainment Summary, PO Attainment, At-Risk
- * Students, Instructor Performance, Curriculum Gap Analysis and Cohort
- * Comparison. Each is a ReportDocument (downloadable PDF) with tables and a
+ * Printable QA reports: Cohort Level GA Attainment, CO Attainment Summary, PO
+ * Attainment, At-Risk Students, Instructor Performance, Curriculum Gap Analysis
+ * and Term Comparison. Each is a ReportDocument (downloadable PDF) with tables and a
  * chart that appears once and also downloads on its own.
  */
 
@@ -26,6 +26,87 @@ const subtitleOf = (ctx: ReportContext) => [ctx.departmentName, ctx.programCode 
 const statusCls = (ok: boolean) => `font-semibold ${ok ? 'text-green-700' : 'text-red-700'}`;
 
 /* ─────────────────────────── CO Attainment Summary ─────────────────────────── */
+
+/* ─────────────────────────── Cohort Level GA Attainment ─────────────────────── */
+
+export function CohortLevelGaReport({ data, ctx, threshold }: { data: any; ctx: ReportContext; threshold: number }) {
+  const gas: any[] = [...(data.attributes || [])].sort((a, b) => lastNum(a.id) - lastNum(b.id));
+  const batches: string[] = data.graduatedBatches || [];
+  const shown = (v: any) => (v == null ? '—' : pct1(v));
+  const counts = data.responseCounts || {};
+  const fileBase = `Cohort_Level_GA_${data.programCode || data.programId || ''}`;
+  const SERIES = ['Direct', 'Indirect', 'Combined'];
+  const seriesKey: Record<string, string> = { Direct: 'direct', Indirect: 'indirect', Combined: 'combined' };
+
+  return (
+    <ReportDocument
+      title="Cohort Level GA Attainment"
+      subtitle={`${data.departmentName || ''}${data.programCode ? ` (${data.programCode})` : ''}`}
+      fileBase={fileBase}
+      kpi={threshold.toFixed(1)}
+      canExport={batches.length > 0}
+      info={[
+        ['Programme', `${data.programName}${data.programCode ? ` (${data.programCode})` : ''}`],
+        ['Graduated Batches', batches.join(', ') || 'None yet'],
+        ['Students', data.studentCount ?? 0],
+        ['Survey Responses', `Internship ${counts.internship ?? 0}, Exit ${counts.exit ?? 0}`],
+      ]}
+      notes={[
+        `Direct: the average of the GA's course scores, a course's score being the percentage of its students who attain the GA. The direct KPI is met when at least ${threshold}% of the mapped courses attain it.`,
+        `Indirect: the percentage of responses scoring 3 or above on the internship and exit surveys, which count equally. The indirect KPI is met at ${threshold}% or above.`,
+        `Combined: 80% direct + 20% indirect, attained at ${threshold}% or above. It needs both results.`,
+      ]}
+    >
+      {batches.length === 0 ? <p className="text-sm text-red-600 font-bold text-center py-6">No batch of this programme has graduated yet. A batch graduates when all its 8th semester courses are finalized.</p> : (
+        <>
+          <table className="w-full border-collapse text-[11.5px]">
+            <thead>
+              <tr className="bg-slate-300">
+                <th className={`${th} w-14`}>GA</th>
+                <th className={th}>Title</th>
+                <th className={`${th} w-16 text-center`}>Direct %</th>
+                <th className={`${th} w-20 text-center`}>Courses Attained</th>
+                <th className={`${th} w-16 text-center`}>Direct KPI</th>
+                <th className={`${th} w-20 text-center`}>Internship %</th>
+                <th className={`${th} w-16 text-center`}>Exit %</th>
+                <th className={`${th} w-16 text-center`}>Indirect %</th>
+                <th className={`${th} w-16 text-center`}>Indirect KPI</th>
+                <th className={`${th} w-20 text-center`}>Combined %</th>
+                <th className={`${th} w-24 text-center`}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {gas.map(g => (
+                <tr key={g.id}>
+                  <td className={`${td} font-semibold`}>{ctx.gaLabel(g.id)}</td>
+                  <td className={td}>{g.title}</td>
+                  <td className={`${td} text-center`}>{shown(g.direct)}</td>
+                  <td className={`${td} text-center`}>{g.coursesAttained} / {g.mappedCourses}</td>
+                  <td className={`${td} text-center ${statusCls(g.directKpiMet)}`}>{g.directKpiMet ? 'Met' : 'Not Met'}</td>
+                  <td className={`${td} text-center`}>{shown(g.internship)}</td>
+                  <td className={`${td} text-center`}>{shown(g.exit)}</td>
+                  <td className={`${td} text-center`}>{shown(g.indirect)}</td>
+                  <td className={`${td} text-center ${g.indirect == null ? '' : statusCls(g.indirectKpiMet)}`}>{g.indirect == null ? '—' : g.indirectKpiMet ? 'Met' : 'Not Met'}</td>
+                  <td className={`${td} text-center font-bold`}>{shown(g.combined)}</td>
+                  <td className={`${td} text-center ${g.combined == null ? 'text-slate-500' : statusCls(g.attained)}`}>{g.combined == null ? 'No survey data' : g.attained ? 'Attained' : 'Not Attained'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <ReportChartBlock title="Direct, Indirect and Combined by GA" subtitle={`${data.programName} — graduated batches ${batches.join(', ')}`} fileBase={fileBase}>
+            <ReportGroupedBarChart
+              categories={gas.map(g => ctx.gaLabel(g.id))}
+              series={SERIES}
+              threshold={threshold}
+              value={(cat, s) => { const g = gas[gas.map(x => ctx.gaLabel(x.id)).indexOf(cat)]; const v = g?.[seriesKey[s]]; return v == null ? null : num(v); }}
+            />
+          </ReportChartBlock>
+        </>
+      )}
+    </ReportDocument>
+  );
+}
 
 export function CoSummaryReport({ data, ctx, threshold }: { data: any; ctx: ReportContext; threshold: number }) {
   const courses: any[] = data.courses || [];
@@ -48,7 +129,7 @@ export function CoSummaryReport({ data, ctx, threshold }: { data: any; ctx: Repo
         ['Courses', courses.length],
         ['CLOs Met', `${allClos.filter(met).length} / ${allClos.length}`],
       ]}
-      notes={[`A CLO is Met when the class attainment on the questions mapped to it is at least ${threshold}%. A course's score is the average of its CLO attainments.`]}
+      notes={[`Attainment % is the percentage of students who attain the CLO, by scoring at least ${threshold}% on its questions. A CLO is Met at ${threshold}% or above. A course's score is the average over its CLOs.`]}
     >
       {courses.length === 0 ? <p className="text-sm text-red-600 font-bold text-center py-6">No course offerings found.</p> : (
         <>
@@ -129,25 +210,31 @@ export function CoSummaryReport({ data, ctx, threshold }: { data: any; ctx: Repo
 
 export function PoAttainmentReport({ data, ctx, threshold }: { data: any; ctx: ReportContext; threshold: number }) {
   const pos: any[] = [...(data.pos || [])].sort((a, b) => lastNum(a.id) - lastNum(b.id));
-  const colorOf = (st: string) => (st === 'Met' ? RC.good : st === 'Partially Met' ? RC.warning : RC.bad);
-  const clsOf = (st: string) => `font-semibold ${st === 'Met' ? 'text-green-700' : st === 'Partially Met' ? 'text-amber-700' : 'text-red-700'}`;
-  const count = (st: string) => pos.filter(p => p.status === st).length;
-  const fileBase = `PO_Attainment_${ctx.programCode || data.programId || ''}`;
+  const clsOf = (st: string) => statusCls(st === 'Met');
+  const count = (key: string, st: string) => pos.filter(p => p[key] === st).length;
+  const counts = data.responseCounts || {};
+  const fileBase = `PO_Attainment_${ctx.programCode || data.programId || ''}${data.graduationYear ? `_${data.graduationYear}` : ''}`;
+  const hasSurveys = pos.some(p => p.indirectPercent != null);
 
   return (
     <ReportDocument
       title="Programme Outcome (PO) Attainment Report — HEC Compliance"
       subtitle={subtitleOf(ctx)}
       fileBase={fileBase}
-      kpi={`Met ≥ 70% · Partially Met ≥ ${threshold}%`}
+      kpi={`Met ≥ ${threshold}%`}
       canExport={pos.length > 0}
       info={[
         ['Programme', data.programName ? `${data.programName}${ctx.programCode ? ` (${ctx.programCode})` : ''}` : progLabel(ctx, data.programId)],
         ['Total POs', pos.length],
-        ['Met', count('Met')],
-        ['Partially / Not Met', `${count('Partially Met')} / ${pos.length - count('Met') - count('Partially Met')}`],
+        ['Direct Met', `${count('directStatus', 'Met')} / ${pos.length}`],
+        ['Indirect Met', hasSurveys ? `${count('indirectStatus', 'Met')} / ${pos.length}` : 'No survey data'],
+        ['Graduates', data.graduationYear ? `Graduated ${data.graduationYear}` : 'All graduation years'],
+        ['Survey Responses', `Alumni ${counts.alumni ?? 0}, Employer ${counts.employer ?? 0}`],
       ]}
-      notes={[`A PO's attainment is the average attainment of the GAs mapped to it. Met: 70% or above; Partially Met: ${threshold}% to below 70%; Not Met: below ${threshold}%.`]}
+      notes={[
+        `Direct: the average of the direct results of the GAs mapped to the PO.`,
+        `Indirect: the alumni and employer surveys, the average of the percentage of responses scoring 3 or above on each question mapped to the PO. The two figures are shown separately and are not combined.`,
+      ]}
     >
       {pos.length === 0 ? <p className="text-sm text-red-600 font-bold text-center py-6">No programme outcomes defined.</p> : (
         <>
@@ -156,9 +243,11 @@ export function PoAttainmentReport({ data, ctx, threshold }: { data: any; ctx: R
               <tr className="bg-slate-300">
                 <th className={`${th} w-16`}>PO</th>
                 <th className={th}>Description</th>
-                <th className={`${th} w-48`}>Contributing GAs</th>
-                <th className={`${th} w-24 text-center`}>Attainment %</th>
-                <th className={`${th} w-24 text-center`}>Status</th>
+                <th className={`${th} w-44`}>Contributing GAs</th>
+                <th className={`${th} w-16 text-center`}>Direct %</th>
+                <th className={`${th} w-20 text-center`}>Direct Status</th>
+                <th className={`${th} w-16 text-center`}>Indirect %</th>
+                <th className={`${th} w-20 text-center`}>Indirect Status</th>
               </tr>
             </thead>
             <tbody>
@@ -167,18 +256,21 @@ export function PoAttainmentReport({ data, ctx, threshold }: { data: any; ctx: R
                   <td className={`${td} font-semibold`}>{po.id}</td>
                   <td className={td}>{po.text}</td>
                   <td className={td}>{(po.contributingGAs || []).length ? (po.contributingGAs || []).map((g: any) => `${ctx.gaLabel(g.gaId)} (${num(g.attainmentPercent).toFixed(0)}%)`).join(', ') : '—'}</td>
-                  <td className={`${td} text-center`}>{pct1(po.attainmentPercent)}</td>
-                  <td className={`${td} text-center ${clsOf(po.status)}`}>{po.status}</td>
+                  <td className={`${td} text-center`}>{pct1(po.directPercent)}</td>
+                  <td className={`${td} text-center ${clsOf(po.directStatus)}`}>{po.directStatus}</td>
+                  <td className={`${td} text-center`}>{po.indirectPercent == null ? '—' : pct1(po.indirectPercent)}</td>
+                  <td className={`${td} text-center ${po.indirectStatus ? clsOf(po.indirectStatus) : ''}`}>{po.indirectStatus || 'No survey data'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
 
-          <ReportChartBlock title="PO Attainment Chart" subtitle={`${data.programName || progLabel(ctx, data.programId)} — attainment by programme outcome`} fileBase={fileBase}>
-            <ReportBarChart
+          <ReportChartBlock title="PO Attainment Chart" subtitle={`${data.programName || progLabel(ctx, data.programId)} — direct and indirect by programme outcome`} fileBase={fileBase}>
+            <ReportGroupedBarChart
+              categories={pos.map(p => String(p.id))}
+              series={['Direct', 'Indirect']}
               threshold={threshold}
-              legend={[{ color: RC.good, label: 'Met' }, { color: RC.warning, label: 'Partially Met' }, { color: RC.bad, label: 'Not Met' }]}
-              items={pos.map(p => ({ label: String(p.id), value: num(p.attainmentPercent), color: colorOf(p.status), title: `${p.id}: ${p.text}` }))}
+              value={(cat, s) => { const p = pos.find(x => String(x.id) === cat); const v = s === 'Direct' ? p?.directPercent : p?.indirectPercent; return v == null ? null : num(v); }}
             />
           </ReportChartBlock>
         </>
@@ -272,7 +364,7 @@ export function InstructorPerformanceReport({ data, ctx, threshold }: { data: an
         ['Active Courses', allCourses.length],
         ['Below Threshold', `${below} / ${allCourses.length}`],
       ]}
-      notes={[`Covers active (current) course offerings. A course is Below Target when the average of its CLO attainments is below ${threshold}%.`]}
+      notes={[`Covers active (current) course offerings. Each CLO's attainment is the percentage of students who attain it; a course is Below Target when the average over its CLOs is below ${threshold}%.`]}
     >
       {insts.length === 0 ? <p className="text-sm text-red-600 font-bold text-center py-6">No instructors found.</p> : (
         <>
@@ -413,7 +505,7 @@ export function GapAnalysisReport({ data, ctx }: { data: any; ctx: ReportContext
   );
 }
 
-/* ───────────────────────────── Cohort Comparison ───────────────────────────── */
+/* ───────────────────────────── Term Comparison ───────────────────────────── */
 
 export function CohortComparisonReport({ data, ctx, threshold }: { data: any; ctx: ReportContext; threshold: number }) {
   const cohorts: any[] = data.cohorts || [];
@@ -425,11 +517,11 @@ export function CohortComparisonReport({ data, ctx, threshold }: { data: any; ct
   const gas: string[] = Array.from(new Set(cohorts.map(gaOf))).sort((a, b) => lastNum(a) - lastNum(b));
   const years: string[] = Array.from(new Set(cohorts.map(c => String(c.academicYear)))).sort((a, b) => termKey(a) - termKey(b) || a.localeCompare(b));
   const val = (ga: string, yr: string) => { const c = cohorts.find(x => gaOf(x) === ga && String(x.academicYear) === yr); return c ? num(c.attainmentPercent) : null; };
-  const fileBase = `Cohort_Comparison_${ctx.programCode || data.programId || ''}${data.gaId ? `_${ctx.gaLabel(data.gaId)}` : ''}`;
+  const fileBase = `Term_Comparison_${ctx.programCode || data.programId || ''}${data.gaId ? `_${ctx.gaLabel(data.gaId)}` : ''}`;
 
   return (
     <ReportDocument
-      title="Cohort Comparison Report"
+      title="Term Comparison Report"
       subtitle={subtitleOf(ctx)}
       fileBase={fileBase}
       kpi={threshold.toFixed(1)}
@@ -437,12 +529,12 @@ export function CohortComparisonReport({ data, ctx, threshold }: { data: any; ct
       info={[
         ['Programme', progLabel(ctx, data.programId)],
         ['Graduate Attribute', data.gaId ? `${ctx.gaLabel(data.gaId)}${data.gaName ? ` — ${data.gaName}` : ''}` : 'All GAs'],
-        ['Academic Years', years.map(termLabel).join(', ') || '—'],
+        ['Terms', years.map(termLabel).join(', ') || '—'],
         ['GAs Compared', gas.length],
       ]}
-      notes={[`GA attainment for each academic year, so cohorts can be compared over time. Shaded cells are below the ${threshold}% KPI; "—" means no assessed results for that year.`]}
+      notes={[`The direct assessment of GA for each term, so terms can be compared over time: the average of the course scores in that term. Shaded cells are below the ${threshold}% KPI; "—" means no assessed results for that term.`]}
     >
-      {cohorts.length === 0 ? <p className="text-sm text-red-600 font-bold text-center py-6">No cohort data — course offerings need an academic year set.</p> : (
+      {cohorts.length === 0 ? <p className="text-sm text-red-600 font-bold text-center py-6">No term data — course offerings need a term set.</p> : (
         <>
           <table className="w-full border-collapse text-[11.5px]">
             <thead>
@@ -468,7 +560,7 @@ export function CohortComparisonReport({ data, ctx, threshold }: { data: any; ct
             </tbody>
           </table>
 
-          <ReportChartBlock title="GA Attainment by Academic Year" subtitle={years.length > 1 ? 'Each colour is an academic year; darker = more recent' : `Academic year ${termLabel(years[0])}`} fileBase={fileBase}>
+          <ReportChartBlock title="Direct Assessment of GA by Term" subtitle={years.length > 1 ? 'Each colour is a term; darker = more recent' : `Term ${termLabel(years[0])}`} fileBase={fileBase}>
             <ReportGroupedBarChart categories={gas.map(gaName)} series={years.map(termLabel)} threshold={threshold}
               value={(cat, yr) => val(gas[gas.map(gaName).indexOf(cat)], years[years.map(termLabel).indexOf(yr)])} />
           </ReportChartBlock>

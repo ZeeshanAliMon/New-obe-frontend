@@ -13,7 +13,7 @@ import { exportElementToPdf, exportPagesToPdf } from '../utils/pdfExport';
  *    own PDF / PNG download, independent of the table.
  */
 
-interface BatchStudent { regNo: string; name: string; programCode: string; programName: string; gaScores: Record<string, number | null> }
+interface BatchStudent { regNo: string; name: string; programCode: string; programName: string; gaScores: Record<string, number | null>; gaAttained?: Record<string, boolean | null> }
 interface BatchAttribute { id: string; title: string; averageAttainment: number }
 
 const UNIVERSITY_NAME = 'Iqra University';
@@ -97,7 +97,9 @@ export default function GaBatchReport({ data, labelOf }: { data: any; labelOf: (
     || data.departmentName || '—';
 
   const passes = (v: number | null | undefined) => v != null && v >= threshold;
-  const passed = gas.map(ga => students.filter(s => passes(s.gaScores?.[ga.id])).length);
+  // The framework's rule, decided by the backend: attained in half the courses, average of 50%.
+  const attains = (s: BatchStudent, id: string) => (s.gaAttained ? s.gaAttained[id] === true : passes(s.gaScores?.[id]));
+  const passed = gas.map(ga => students.filter(s => attains(s, ga.id)).length);
   const failed = gas.map((_, i) => students.length - passed[i]);
   const minScore = gas.map(ga => {
     const vals = students.map(s => s.gaScores?.[ga.id]).filter((v): v is number => v != null);
@@ -180,7 +182,7 @@ export default function GaBatchReport({ data, labelOf }: { data: any; labelOf: (
                     {gas.map(ga => {
                       const v = s.gaScores?.[ga.id];
                       return (
-                        <td key={ga.id} className={`${cell} text-center ${passes(v) ? '' : 'bg-slate-200'}`}>{fmt(v)}</td>
+                        <td key={ga.id} className={`${cell} text-center ${attains(s, ga.id) ? '' : 'bg-slate-200'}`}>{fmt(v)}</td>
                       );
                     })}
                   </tr>
@@ -198,7 +200,7 @@ export default function GaBatchReport({ data, labelOf }: { data: any; labelOf: (
               </tbody>
             </table>
             <p className="text-[10px] text-slate-600 mt-2">
-              Shaded cells are below the {threshold}% threshold. “—” means the student has no result yet in any course mapped to that GA.
+              Each cell is the student's average over the courses mapped to that GA. Shaded cells are not attained: a GA must be attained in at least {threshold}% of its courses, with an average of at least {threshold}%. “—” means the student has no result yet in any course mapped to that GA.
             </p>
           </div>
         </div>
@@ -216,10 +218,10 @@ export default function GaBatchReport({ data, labelOf }: { data: any; labelOf: (
         </div>
         <div className="overflow-x-auto">
           <div ref={chartRef} className="bg-white border border-slate-800 p-5 text-slate-900 min-w-[760px]" style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}>
-            {headerBlock('GA Attainment by Batch — Passed Students per GA')}
+            {headerBlock('Direct Assessment of GA by Batch — Passed Students per GA')}
             {infoRow}
             <PassFailByGaChart gas={gas} passed={passed} failed={failed} labelOf={labelOf} />
-            <p className="text-[11px] text-slate-600 mt-2">Total students: {students.length}. A student's GA score is the share of that GA's questions they passed across their courses; they pass the GA at {threshold}% or more.</p>
+            <p className="text-[11px] text-slate-600 mt-2">Total students: {students.length}. A student passes a GA by attaining it in at least half of its courses, with an average of at least 50%.</p>
           </div>
         </div>
       </div>

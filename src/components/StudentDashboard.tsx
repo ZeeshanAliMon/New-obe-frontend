@@ -2088,17 +2088,18 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
       });
     });
 
-    // GA attainment by questions passed (backend gaAttainments), summed over
-    // every course -- the same method as the QA "GA by Student" report. The CLO
-    // average above is only a fallback for responses without gaAttainments.
-    const byQuestions: Record<string, { passed: number; total: number; gaTitle: string; courses: Set<string> }> = {};
+    // GA by questions passed in each course (backend gaAttainments), then the
+    // framework's rule, the same as the QA "GA by Student" report: attained in
+    // at least half of the GA's courses, with an average of at least 50%. A
+    // repeated course counts at its best attempt. The CLO average above is only
+    // a fallback for responses without gaAttainments.
+    const byQuestions: Record<string, { percents: Record<string, number>; gaTitle: string; courses: Set<string> }> = {};
     enrolledCoursesWithGrades.forEach((course: any) => {
       if (!Array.isArray(course.gaAttainments)) return;
       course.gaAttainments.forEach((g: any) => {
         if (!g || !g.gaId || !(g.total > 0)) return;
-        const t = byQuestions[g.gaId] || (byQuestions[g.gaId] = { passed: 0, total: 0, gaTitle: g.gaTitle || g.gaId, courses: new Set() });
-        t.passed += Number(g.passed) || 0;
-        t.total += Number(g.total) || 0;
+        const t = byQuestions[g.gaId] || (byQuestions[g.gaId] = { percents: {}, gaTitle: g.gaTitle || g.gaId, courses: new Set() });
+        t.percents[course.code] = Math.max(Number(g.percent) || 0, t.percents[course.code] ?? -1);
         t.courses.add(`${course.code} - ${course.title || course.name || ''}`);
       });
     });
@@ -2112,8 +2113,9 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
     }
 
     const list = Object.entries(gaMap).map(([gaId, data]) => {
+      const coursePercents = useQuestions ? Object.values(byQuestions[gaId].percents) : [];
       const avg = useQuestions
-        ? (byQuestions[gaId].passed / byQuestions[gaId].total) * 100
+        ? coursePercents.reduce((a, b) => a + b, 0) / coursePercents.length
         : data.scores.length > 0
           ? data.scores.reduce((a, b) => a + b, 0) / data.scores.length
           : 0;
@@ -2125,7 +2127,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
         name: origGA?.name || data.gaTitle,
         description: origGA?.description || `Competency and standard metrics for ${origGA?.name || data.gaTitle}`,
         score: Math.round(avg * 100) / 100,
-        attained: avg >= 50,   // 50% is the threshold
+        attained: avg >= 50 && (!useQuestions || coursePercents.filter(p => p >= 50).length * 2 >= coursePercents.length),
         contributingCount: data.scores.length,
         coursesList: Array.from(data.courses)
       };
@@ -2401,7 +2403,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
           >
             <PlaqueIcon className="h-4 w-4 hidden sm:block" />
             <span className="sm:hidden">GAs</span>
-            <span className="hidden sm:inline">GA Attainment Profile</span>
+            <span className="hidden sm:inline">Direct Assessment of GA</span>
           </button>
           <button
             onClick={() => setActiveTab('ga_transcript')}
@@ -2804,7 +2806,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900">GA Attainment</h3>
+                    <h3 className="text-sm font-bold text-slate-900">Direct Assessment of GA</h3>
                     <p className="text-xs text-slate-500 mt-0.5">Graduate Attributes each course contributes to, averaged from its mapped CLOs. 50% or above is attained.</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -2835,7 +2837,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
                   const attainedGas = gaAttainmentProfile.filter(g => g.attained).length;
                   return (
                     <ChartCard
-                      title="Overall GA attainment profile"
+                      title="Overall direct assessment of GA"
                       subtitle={`${attainedGas} of ${gaAttainmentProfile.length} GAs attained (${Math.round((attainedGas / gaAttainmentProfile.length) * 100)}%) — average of the mapped CLOs across all your courses`}
                     >
                       <HBarChart threshold={50} passLabel="Attained (50% or above)" failLabel="Not attained"
@@ -3002,7 +3004,7 @@ export default function StudentDashboard({ onLogout, studentRegNo }: StudentDash
             <div className="flex flex-col items-center mb-6 border-b border-black pb-4">
               <img src="/iqralogo.png" alt="Iqra University Logo" className="h-16 w-auto object-contain mb-2" referrerPolicy="no-referrer" />
               <h1 className="text-lg font-black tracking-widest text-black uppercase font-mono">
-                {exportingReport === 'clo' ? 'Unofficial CLO Attainment Report' : 'Unofficial GA Attainment Report'}
+                {exportingReport === 'clo' ? 'Unofficial CLO Attainment Report' : 'Unofficial Direct Assessment of GA Report'}
               </h1>
             </div>
 

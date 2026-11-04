@@ -28,7 +28,7 @@ export function SummaryChart({ gas, threshold, labelOf }: { gas: TranscriptGa[];
   const barW = Math.max(10, Math.min(44, groupW * 0.55));
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="GA attainment summary" style={{ display: 'block', fontFamily: 'Arial, Helvetica, sans-serif' }}>
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Direct assessment of GA summary" style={{ display: 'block', fontFamily: 'Arial, Helvetica, sans-serif' }}>
       {[0, 25, 50, 75, 100].map(t => (
         <g key={t}>
           <line x1={padL} x2={padL + plotW} y1={y(t)} y2={y(t)} stroke="#e1e0d9" />
@@ -217,8 +217,8 @@ export default function StudentGaTranscript({ data, labelOf }: { data: any; labe
           )}
 
           <div data-pdf-block className="text-[11px] pt-2 space-y-1">
-            <p><b>Note:</b> This report shows the running GA attainment of the student. Final GA attainment will be achieved at the completion of the programme.</p>
-            <p>A question is passed at {threshold}% of its marks. A course is Attained for a GA when the student passes at least {threshold}% of its questions for that GA; a GA's score is questions passed / questions for that GA across all courses.</p>
+            <p><b>Note:</b> This report shows the running direct assessment of GA of the student. The final result will be achieved at the completion of the programme.</p>
+            <p>A question is passed at {threshold}% of its marks. A course is Attained for a GA when the student passes at least {threshold}% of its questions for that GA; a repeated course counts at its best attempt. A GA's score is the average over its courses, and it is Attained in at least {threshold}% of them with an average of at least {threshold}%.</p>
             <p>Printed Date: {printed}</p>
           </div>
         </div>
