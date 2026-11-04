@@ -246,7 +246,8 @@ const normalizeDepartment = (d: any): Department => {
     id: id || name || `dept-${Date.now()}`,
     name: name,
     vision: d.vision || '',
-    mission: d.mission || ''
+    mission: d.mission || '',
+    directWeight: d.directWeight
   };
 };
 

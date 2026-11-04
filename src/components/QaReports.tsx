@@ -35,6 +35,8 @@ export function CohortLevelGaReport({ data, ctx, threshold }: { data: any; ctx: 
   const shown = (v: any) => (v == null ? '—' : pct1(v));
   const counts = data.responseCounts || {};
   const fileBase = `Cohort_Level_GA_${data.programCode || data.programId || ''}`;
+  const directWeight = num(data.directWeight);
+  const indirectWeight = num(data.indirectWeight);
   const SERIES = ['Direct', 'Indirect', 'Combined'];
   const seriesKey: Record<string, string> = { Direct: 'direct', Indirect: 'indirect', Combined: 'combined' };
 
@@ -50,11 +52,12 @@ export function CohortLevelGaReport({ data, ctx, threshold }: { data: any; ctx: 
         ['Graduated Batches', batches.join(', ') || 'None yet'],
         ['Students', data.studentCount ?? 0],
         ['Survey Responses', `Internship ${counts.internship ?? 0}, Exit ${counts.exit ?? 0}`],
+        ['Weights', `${directWeight}% direct, ${indirectWeight}% indirect`],
       ]}
       notes={[
         `Direct: the average of the GA's course scores, a course's score being the percentage of its students who attain the GA. The direct KPI is met when at least ${threshold}% of the mapped courses attain it.`,
         `Indirect: the percentage of responses scoring 3 or above on the internship and exit surveys, which count equally. The indirect KPI is met at ${threshold}% or above.`,
-        `Combined: 80% direct + 20% indirect, attained at ${threshold}% or above. It needs both results.`,
+        `Combined: ${directWeight}% direct + ${indirectWeight}% indirect, attained at ${threshold}% or above.`,
       ]}
     >
       {batches.length === 0 ? <p className="text-sm text-red-600 font-bold text-center py-6">No batch of this programme has graduated yet. A batch graduates when all its 8th semester courses are finalized.</p> : (

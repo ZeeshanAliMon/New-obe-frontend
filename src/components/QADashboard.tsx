@@ -133,6 +133,8 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
   const [moreReportCourseCode, setMoreReportCourseCode] = useState<string>('');
   const [moreReportGaId, setMoreReportGaId] = useState<string>('');
   const [moreReportGradYear, setMoreReportGradYear] = useState<string>('');
+  const [cohortDirectWeight, setCohortDirectWeight] = useState<string>('80');
+  const [savedDirectWeight, setSavedDirectWeight] = useState<string>('80');
   const [moreReportGradYears, setMoreReportGradYears] = useState<number[]>([]);
   const [moreReportData, setMoreReportData] = useState<any>(null);
   const [moreReportLoading, setMoreReportLoading] = useState(false);
@@ -241,6 +243,25 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
   }, [data]);
 
   // Synchronize department states when selected department changes
+  useEffect(() => {
+    const weight = String(data?.departments?.find(d => d.id === activeDeptId)?.directWeight ?? 80);
+    setCohortDirectWeight(weight);
+    setSavedDirectWeight(weight);
+  }, [data, activeDeptId]);
+
+  const validDirectWeight = /^\d+$/.test(cohortDirectWeight) && Number(cohortDirectWeight) <= 100;
+
+  const saveCohortWeights = async () => {
+    try {
+      await apiService.updateDepartment(activeDeptId, { directWeight: Number(cohortDirectWeight) });
+      setSavedDirectWeight(cohortDirectWeight);
+      setMoreReportData(null);
+      setMoreReportError(null);
+    } catch (e: any) {
+      setMoreReportError(e?.message || 'Could not save the weights.');
+    }
+  };
+
   const activeDepartment = useMemo(() => {
     if (!data || !activeDeptId) return null;
     return data.departments.find(d => d.id === activeDeptId) || null;
@@ -2100,6 +2121,30 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                             <option key={g.id} value={g.id}>{gaLabel(g.id)} — {g.name}</option>
                           ))}
                         </select>
+                      </div>
+                    )}
+
+                    {/* Cohort Level GA: the direct / indirect weights, saved for the department */}
+                    {moreReportType === 'cohort_ga' && (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Direct Weight %</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            aria-label="Direct weight"
+                            type="number" min={0} max={100}
+                            value={cohortDirectWeight}
+                            onChange={e => setCohortDirectWeight(e.target.value)}
+                            className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-20"
+                          />
+                          <span className="text-xs text-slate-600 whitespace-nowrap">Indirect {validDirectWeight ? 100 - Number(cohortDirectWeight) : '—'}%</span>
+                          <button
+                            onClick={saveCohortWeights}
+                            disabled={!validDirectWeight || cohortDirectWeight === savedDirectWeight}
+                            className="px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Save Weights
+                          </button>
+                        </div>
                       </div>
                     )}
 

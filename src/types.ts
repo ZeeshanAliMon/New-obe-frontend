@@ -39,6 +39,7 @@ export interface Department {
   name: string;
   vision: string;
   mission: string;
+  directWeight?: number;
 }
 
 export interface Course {
