@@ -54,7 +54,7 @@ export default function CourseCloReport({ data, gaLabel }: { data: any; gaLabel:
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex justify-end print:hidden">
         <button onClick={run} disabled={busy || !clos.length} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all disabled:opacity-60 disabled:cursor-not-allowed bg-indigo-700 hover:bg-indigo-800 text-white shadow-sm">
           {busy ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Exporting...</> : <><Download className="w-3.5 h-3.5" /> Download Report PDF</>}
         </button>

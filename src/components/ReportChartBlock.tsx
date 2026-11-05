@@ -45,7 +45,7 @@ export default function ReportChartBlock({ title, subtitle, fileBase, children }
           <h3 className="text-base font-bold">{title}</h3>
           {subtitle && <p className="text-[11px] text-slate-600">{subtitle}</p>}
         </div>
-        <div className={`${PDF_EXCLUDE_CLASS} flex gap-2 shrink-0`}>
+        <div className={`${PDF_EXCLUDE_CLASS} flex gap-2 shrink-0 print:hidden`}>
           <button onClick={() => run('png')} disabled={!!busy} className={`${btn} border border-slate-300 text-slate-700 hover:bg-slate-50`}>
             {busy === 'png' ? spinner : <ImageIcon className="w-3 h-3" />} Chart PNG
           </button>

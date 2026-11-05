@@ -2282,7 +2282,7 @@ export default function QADashboard({ onLogout }: QADashboardProps) {
                   <div className="qa-print-area bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
 
                     {/* Print button */}
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between print:hidden">
                       <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
                         <FileText className="w-4 h-4 text-indigo-600" />
                         Report Results

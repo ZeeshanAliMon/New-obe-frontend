@@ -157,7 +157,7 @@ export default function GaBatchReport({ data, labelOf }: { data: any; labelOf: (
     <div className="space-y-6">
       {/* ── Progress table ── */}
       <div className="space-y-2">
-        <div className="flex justify-end">
+        <div className="flex justify-end print:hidden">
           <button onClick={() => run('table')} disabled={!!busy} className={`${btn} bg-indigo-700 hover:bg-indigo-800 text-white shadow-sm`}>
             {busy === 'table' ? <>{spinner} Exporting...</> : <><Download className="w-3.5 h-3.5" /> Download Report PDF</>}
           </button>
@@ -208,7 +208,7 @@ export default function GaBatchReport({ data, labelOf }: { data: any; labelOf: (
 
       {/* ── Separate bar chart ── */}
       <div className="space-y-2">
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-2 print:hidden">
           <button onClick={() => run('chart-png')} disabled={!!busy} className={`${btn} border border-slate-300 text-slate-700 hover:bg-slate-50`}>
             {busy === 'chart-png' ? <>{spinner} Exporting...</> : <><ImageIcon className="w-3.5 h-3.5" /> Chart PNG</>}
           </button>

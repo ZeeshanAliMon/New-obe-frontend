@@ -64,7 +64,7 @@ export default function ProgramGaReport({ data, labelOf }: { data: any; labelOf:
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
+      <div className="flex justify-end print:hidden">
         <button onClick={run} disabled={busy || !attributes.length} className={`${btn} bg-indigo-700 hover:bg-indigo-800 text-white shadow-sm`}>
           {busy ? <>{spinner} Exporting...</> : <><Download className="w-3.5 h-3.5" /> Download Report PDF</>}
         </button>
