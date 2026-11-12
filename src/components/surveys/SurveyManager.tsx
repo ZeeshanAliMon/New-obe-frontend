@@ -23,6 +23,8 @@ const FORM_TYPES = [
 // Details a form may ask for, and the words that identify their column in the file.
 const DETAIL_FIELDS: { key: string; label: string; match: string[] }[] = [
   { key: 'program', label: 'Program', match: ['program', 'programme', 'degree'] },
+  // "=" means the column name must be exactly that word.
+  { key: 'year', label: 'Year (e.g. Summer 2026)', match: ['internship year', 'survey year', 'year collected', 'academic year', 'session', '=year'] },
   { key: 'regNo', label: 'Reg No', match: ['reg no', 'registration', 'roll no', 'reg number'] },
   { key: 'batch', label: 'Batch', match: ['batch'] },
   { key: 'section', label: 'Section', match: ['section'] },
@@ -69,7 +71,9 @@ const matchDetails = (columns: string[], questionColumns: Set<string>) => {
   const used = new Set<string>();
   wanted.forEach(({ key, phrase }) => {
     if (out[key]) return;
-    const hit = free.find(c => !used.has(c) && words(c) === phrase) || free.find(c => !used.has(c) && words(c).includes(phrase));
+    const exact = phrase.startsWith('=');
+    const p = exact ? phrase.slice(1) : phrase;
+    const hit = free.find(c => !used.has(c) && words(c) === p) || (exact ? undefined : free.find(c => !used.has(c) && words(c).includes(p)));
     if (hit) { out[key] = hit; used.add(hit); }
   });
   return out;
@@ -188,7 +192,7 @@ function FormsAndMapping({ programs, canEdit }: { programs: ProgramOption[]; can
 
 function UploadResponses({ programs }: { programs: ProgramOption[] }) {
   const [formType, setFormType] = useState('internship');
-  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [year, setYear] = useState('');
   const [defaultProgram, setDefaultProgram] = useState('');
   const [questions, setQuestions] = useState<FormQuestion[]>([]);
   const [fileName, setFileName] = useState('');
@@ -252,6 +256,7 @@ function UploadResponses({ programs }: { programs: ProgramOption[] }) {
 
   const matchedCount = questions.filter(q => questionColumns[q.no]).length;
   const programMissing = !detailColumns.program && !defaultProgram;
+  const yearMissing = !detailColumns.year && !/^\d{4}$/.test(year.trim());
 
   const send = async (dryRun: boolean) => {
     setBusy(true);
@@ -262,6 +267,7 @@ function UploadResponses({ programs }: { programs: ProgramOption[] }) {
         setCheck(result);
       } else {
         setMessage({ text: `${result.accepted} responses saved${result.skipped ? `, ${result.skipped} left out` : ''}.` });
+        setYear('');
         setCheck(null);
         setFileRows([]);
         setColumns([]);
@@ -276,7 +282,7 @@ function UploadResponses({ programs }: { programs: ProgramOption[] }) {
   };
 
   const remove = async (u: any) => {
-    if (!window.confirm(`Delete ${u.formTitle} ${u.year} and its ${u.responses} responses?`)) return;
+    if (!window.confirm(`Delete this ${u.formTitle} file (${(u.years || []).join(', ')}) and its ${u.responses} responses?`)) return;
     try {
       await apiService.deleteSurveyUpload(u.id);
       loadUploads();
@@ -303,15 +309,11 @@ function UploadResponses({ programs }: { programs: ProgramOption[] }) {
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className={label}>Year Collected</label>
-            <input aria-label="Year collected" className={`${input} w-24`} value={year} onChange={e => { setCheck(null); setYear(e.target.value); }} />
-          </div>
-          <div className="flex flex-col gap-1">
             <label className={label}>Response File</label>
-            <input aria-label="Response file" type="file" accept=".xlsx,.xls,.csv" className="text-xs" onChange={e => onFile(e.target.files?.[0])} />
+            <input aria-label="Response file" type="file" accept=".xlsx,.xls,.csv" className="text-xs" onChange={e => { onFile(e.target.files?.[0]); e.target.value = ''; }} />
           </div>
         </div>
-        <p className="text-xs text-slate-500 mt-3">In Microsoft Forms, open Responses and choose Open results in Excel. A new file for the same survey and year replaces the old one, so nothing counts twice.</p>
+        <p className="text-xs text-slate-500 mt-3">In Microsoft Forms, open Responses and choose Open results in Excel. Each response keeps its own year, from a column like Internship Year. Saving replaces the responses already saved for the years in the file, so a file with every year can be uploaded again without counting anything twice.</p>
       </div>
 
       {message && <Notice error={message.error}>{message.text}</Notice>}
@@ -322,6 +324,12 @@ function UploadResponses({ programs }: { programs: ProgramOption[] }) {
             <h3 className="text-sm font-bold text-slate-900">{fileName}</h3>
             <p className="text-xs text-slate-500">{fileRows.length} responses · {matchedCount} of {questions.length} questions matched. Please check the columns below.</p>
           </div>
+          {!detailColumns.year && (
+            <div className="flex flex-col gap-1 w-72">
+              <label className={label}>This file has no year column. Its responses are from:</label>
+              <input aria-label="Year of all responses" placeholder="e.g. 2026" className={`${input} w-28`} value={year} onChange={e => { setCheck(null); setYear(e.target.value); }} />
+            </div>
+          )}
           {!detailColumns.program && (
             <div className="flex flex-col gap-1 w-72">
               <label className={label}>This file has no Program column. All its responses are for:</label>
@@ -353,7 +361,7 @@ function UploadResponses({ programs }: { programs: ProgramOption[] }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <button className={primary} disabled={busy || !matchedCount || programMissing} onClick={() => send(true)}>
+            <button className={primary} disabled={busy || !matchedCount || programMissing || yearMissing} onClick={() => send(true)}>
               {busy ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ClipboardList className="w-3.5 h-3.5" />} Check File
             </button>
             {check && check.accepted > 0 && (
@@ -366,8 +374,8 @@ function UploadResponses({ programs }: { programs: ProgramOption[] }) {
           {check && (
             <div className="space-y-2 text-xs">
               <Notice error={check.accepted === 0}>
-                {check.accepted} of {fileRows.length} responses are ready ({Object.entries(check.programs).map(([k, v]) => `${k}: ${v}`).join(', ') || 'none'}).
-                {check.replaces != null && ` This replaces the ${check.replaces} responses already saved for this survey and year.`}
+                {check.accepted} of {fileRows.length} responses are ready. Programmes: {Object.entries(check.programs).map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}. Years: {Object.entries(check.years || {}).map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}.
+                {check.replaces != null && ` This replaces the ${check.replaces} responses already saved for ${Object.keys(check.years || {}).join(', ')}.`}
               </Notice>
               {check.skipped > 0 && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-amber-900">
@@ -388,18 +396,18 @@ function UploadResponses({ programs }: { programs: ProgramOption[] }) {
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-slate-700">
               <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider">
-                <tr><th className={th}>Survey</th><th className={th}>Year</th><th className={th}>Responses</th><th className={th}>File</th><th className={th}>Uploaded</th><th className={th}></th></tr>
+                <tr><th className={th}>Survey</th><th className={th}>Years</th><th className={th}>Responses</th><th className={th}>File</th><th className={th}>Uploaded</th><th className={th}></th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {uploads.map(u => (
                   <tr key={u.id}>
                     <td className={`${td} font-semibold`}>{u.formTitle}</td>
-                    <td className={td}>{u.year}</td>
+                    <td className={td}>{(u.years || []).join(', ')}</td>
                     <td className={td}>{u.responses}</td>
                     <td className={td}>{u.fileName || '—'}</td>
                     <td className={td}>{new Date(u.uploadedAt).toLocaleDateString('en-GB')}{u.uploadedBy ? ` · ${u.uploadedBy}` : ''}</td>
                     <td className={`${td} text-right`}>
-                      <button aria-label={`Delete ${u.formTitle} ${u.year}`} onClick={() => remove(u)} className="p-1 rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                      <button aria-label={`Delete ${u.formTitle} ${(u.years || []).join(' ')}`} onClick={() => remove(u)} className="p-1 rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
                     </td>
                   </tr>
                 ))}
@@ -416,37 +424,45 @@ function SurveyResults({ programs }: { programs: ProgramOption[] }) {
   const [programId, setProgramId] = useState(programs[0]?.id || '');
   const [formType, setFormType] = useState('internship');
   const [year, setYear] = useState('');
+  const [batch, setBatch] = useState('');
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!programId) return;
     setError(null);
-    apiService.getSurveyResults(programId, formType, year)
+    apiService.getSurveyResults(programId, formType, year, batch)
       .then(setData)
       .catch((e: any) => { setData(null); setError(e.message); });
-  }, [programId, formType, year]);
+  }, [programId, formType, year, batch]);
 
   return (
     <div className="space-y-4">
       <div className={`${panel} flex flex-wrap gap-4 items-end`}>
         <div className="flex flex-col gap-1">
           <label className={label}>Programme</label>
-          <select aria-label="Results programme" className={input} value={programId} onChange={e => { setProgramId(e.target.value); setYear(''); }}>
+          <select aria-label="Results programme" className={input} value={programId} onChange={e => { setProgramId(e.target.value); setYear(''); setBatch(''); }}>
             {programs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
         <div className="flex flex-col gap-1">
           <label className={label}>Survey</label>
-          <select aria-label="Results survey" className={input} value={formType} onChange={e => { setFormType(e.target.value); setYear(''); }}>
+          <select aria-label="Results survey" className={input} value={formType} onChange={e => { setFormType(e.target.value); setYear(''); setBatch(''); }}>
             {FORM_TYPES.map(f => <option key={f.id} value={f.id}>{f.title}</option>)}
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <label className={label}>Year Collected</label>
+          <label className={label}>Year</label>
           <select aria-label="Results year" className={input} value={year} onChange={e => setYear(e.target.value)}>
             <option value="">All years</option>
             {(data?.years || []).map((y: number) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className={label}>Batch</label>
+          <select aria-label="Results batch" className={input} value={batch} onChange={e => setBatch(e.target.value)}>
+            <option value="">All batches</option>
+            {(data?.batches || []).map((b: string) => <option key={b} value={b}>{b}</option>)}
           </select>
         </div>
       </div>
@@ -454,11 +470,11 @@ function SurveyResults({ programs }: { programs: ProgramOption[] }) {
       {error && <Notice error>{error}</Notice>}
 
       {data && (data.responseCount === 0 ? (
-        <div className={panel}><p className="text-xs text-slate-500">No responses have been uploaded for this survey and programme.</p></div>
+        <div className={panel}><p className="text-xs text-slate-500">No responses for this survey{year || batch ? ' with these filters' : ' and programme'}.</p></div>
       ) : (
         <>
           <div className={panel}>
-            <h3 className="text-sm font-bold text-slate-900">{data.formTitle}: {data.programName}</h3>
+            <h3 className="text-sm font-bold text-slate-900">{data.formTitle}: {data.programName}{data.year ? `, ${data.year}` : ''}{data.batch ? `, batch ${data.batch}` : ''}</h3>
             <p className="text-xs text-slate-500 mb-3">{data.responseCount} response{data.responseCount === 1 ? '' : 's'}. KPI: at least {data.kpi}% of responses must score 3 or above on each question.</p>
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-slate-700">
@@ -498,7 +514,7 @@ function SurveyResults({ programs }: { programs: ProgramOption[] }) {
             <div className="overflow-x-auto mt-3">
               <table className="w-full text-xs text-slate-700">
                 <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider">
-                  <tr><th className={th}>Name</th><th className={th}>Reg No / Employee</th><th className={th}>Batch</th><th className={th}>Graduation</th><th className={th}>Organization</th><th className={th}>Year</th></tr>
+                  <tr><th className={th}>Name</th><th className={th}>Reg No / Employee</th><th className={th}>Batch</th><th className={th}>Graduation</th><th className={th}>Organization</th><th className={th}>Period</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {data.responses.map((r: any, i: number) => (
@@ -508,7 +524,7 @@ function SurveyResults({ programs }: { programs: ProgramOption[] }) {
                       <td className={td}>{r.batch || '—'}</td>
                       <td className={td}>{r.graduationYear || '—'}</td>
                       <td className={td}>{r.organization || '—'}</td>
-                      <td className={td}>{r.year}</td>
+                      <td className={td}>{r.period || r.year}</td>
                     </tr>
                   ))}
                 </tbody>

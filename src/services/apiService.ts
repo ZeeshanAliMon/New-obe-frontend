@@ -1534,9 +1534,10 @@ export const apiService = {
     if (!res.ok) throw new Error('Could not delete this upload.');
   },
 
-  async getSurveyResults(programId: string, formType: string, year?: string) {
+  async getSurveyResults(programId: string, formType: string, year?: string, batch?: string) {
     const params = new URLSearchParams({ programId, formType });
     if (year) params.set('year', year);
+    if (batch) params.set('batch', batch);
     return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/results/?${params}`, { headers: getHeaders() }));
   },
 
