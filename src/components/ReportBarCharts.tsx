@@ -110,14 +110,21 @@ export function ReportBarChart({ items, percent = true, threshold, legend, yLabe
   );
 }
 
-/** Grouped columns: one group per category, one bar per series (e.g. GA × academic year). */
-export function ReportGroupedBarChart({ categories, series, value, threshold }: {
+/**
+ * Grouped columns: one group per category, one bar per series (e.g. GA × academic year).
+ * Percentages by default; `max` and `suffix` give another scale, such as a 1–5 rating.
+ */
+export function ReportGroupedBarChart({ categories, series, value, threshold, max = 100, suffix = '%', thresholdLabel, showValues }: {
   categories: string[]; series: string[]; value: (cat: string, s: string) => number | null; threshold?: number;
+  max?: number; suffix?: string; thresholdLabel?: string; showValues?: boolean;
 }) {
   const W = 900, H = 320;
   const padL = 50, padR = 16, padT = 20, padB = 50;
   const plotW = W - padL - padR, plotH = H - padT - padB;
-  const y = (v: number) => padT + plotH - (Math.max(0, Math.min(100, v)) / 100) * plotH;
+  const ticks = max === 100 && suffix === '%' ? [0, 25, 50, 75, 100] : niceTicks(max, false);
+  const top = ticks[ticks.length - 1];
+  const y = (v: number) => padT + plotH - (Math.max(0, Math.min(top, v)) / top) * plotH;
+  const decimals = suffix === '%' ? 1 : Number.isInteger(max) && max > 5 ? 0 : 2;
   const groupW = plotW / Math.max(1, categories.length);
   const barW = Math.max(5, Math.min(30, (groupW * 0.8) / Math.max(1, series.length)));
   const colors = series.map((_, i) => SERIES[series.length === 1 ? 2 : Math.round((i / Math.max(1, series.length - 1)) * (SERIES.length - 1))]);
@@ -125,10 +132,10 @@ export function ReportGroupedBarChart({ categories, series, value, threshold }: 
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" style={{ display: 'block', fontFamily: 'Arial, Helvetica, sans-serif' }}>
-      {[0, 25, 50, 75, 100].map(t => (
+      {ticks.map(t => (
         <g key={t}>
           <line x1={padL} x2={padL + plotW} y1={y(t)} y2={y(t)} stroke={RC.grid} />
-          <text x={padL - 6} y={y(t) + 4} textAnchor="end" fontSize={11} fill={RC.ink2}>{t}%</text>
+          <text x={padL - 6} y={y(t) + 4} textAnchor="end" fontSize={11} fill={RC.ink2}>{t}{suffix}</text>
         </g>
       ))}
       <line x1={padL} x2={padL + plotW} y1={padT + plotH} y2={padT + plotH} stroke={RC.axis} />
@@ -141,9 +148,12 @@ export function ReportGroupedBarChart({ categories, series, value, threshold }: 
               if (v == null) return null;
               const x = start + si * barW;
               return (
-                <rect key={s} x={x} y={y(v)} width={barW - 1} height={padT + plotH - y(v)} rx={1.5} fill={colors[si]}>
-                  <title>{`${cat} — ${s}: ${v.toFixed(1)}%`}</title>
-                </rect>
+                <g key={s}>
+                  <rect x={x} y={y(v)} width={barW - 1} height={padT + plotH - y(v)} rx={1.5} fill={colors[si]}>
+                    <title>{`${cat} — ${s}: ${v.toFixed(decimals)}${suffix}`}</title>
+                  </rect>
+                  {showValues && <text x={x + (barW - 1) / 2} y={y(v) - 4} textAnchor="middle" fontSize={series.length > 2 ? 8 : 10} fontWeight={700} fill={RC.ink}>{v.toFixed(decimals)}</text>}
+                </g>
               );
             })}
             <text x={padL + ci * groupW + groupW / 2} y={padT + plotH + 16} textAnchor="middle" fontSize={11} fontWeight={700} fill={RC.ink}>{cat}</text>
@@ -153,7 +163,7 @@ export function ReportGroupedBarChart({ categories, series, value, threshold }: 
       {threshold != null && (
         <>
           <line x1={padL} x2={padL + plotW} y1={y(threshold)} y2={y(threshold)} stroke={RC.ink} strokeDasharray="5 4" strokeWidth={1.2} />
-          <text x={padL + plotW - 4} y={y(threshold) - 5} textAnchor="end" fontSize={10} fill={RC.ink}>KPI {threshold}%</text>
+          <text x={padL + plotW - 4} y={y(threshold) - 5} textAnchor="end" fontSize={10} fill={RC.ink}>{thresholdLabel || `KPI ${threshold}${suffix}`}</text>
         </>
       )}
       <Legend items={legend} x={padL + plotW / 2 - legendWidth(legend) / 2} y={H - 10} />

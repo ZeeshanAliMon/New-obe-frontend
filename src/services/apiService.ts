@@ -1523,7 +1523,7 @@ export const apiService = {
     return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/uploads/`, { headers: getHeaders() }));
   },
 
-  async uploadSurveyResponses(payload: { formType: string; year: string; fileName: string; defaultProgramId?: string; rows: any[]; dryRun: boolean }) {
+  async uploadSurveyResponses(payload: { formType: string; year: string; fileName: string; defaultProgramId?: string; defaultBatch?: string; rows: any[]; dryRun: boolean }) {
     return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/uploads/`, {
       method: 'POST', headers: getHeaders(), body: JSON.stringify(payload),
     }, 60000));
@@ -1539,6 +1539,12 @@ export const apiService = {
     if (year) params.set('year', year);
     if (batch) params.set('batch', batch);
     return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/results/?${params}`, { headers: getHeaders() }));
+  },
+
+  async getSurveyAnalysis(formType: string, groups?: string[]) {
+    const params = new URLSearchParams({ formType });
+    if (groups && groups.length) params.set('groups', groups.join(','));
+    return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/analysis/?${params}`, { headers: getHeaders() }));
   },
 
   async getProgramGAAttainment(programId: string) {

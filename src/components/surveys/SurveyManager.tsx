@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ClipboardList, FileUp, RefreshCw, Save, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { apiService } from '../../services/apiService';
+import SurveyAnalysisReport from './SurveyAnalysisReport';
 
 /**
  * The four NCEAC surveys. The forms run in Microsoft Forms; QA uploads the
@@ -194,6 +195,7 @@ function UploadResponses({ programs }: { programs: ProgramOption[] }) {
   const [formType, setFormType] = useState('internship');
   const [year, setYear] = useState('');
   const [defaultProgram, setDefaultProgram] = useState('');
+  const [defaultBatch, setDefaultBatch] = useState('');
   const [questions, setQuestions] = useState<FormQuestion[]>([]);
   const [fileName, setFileName] = useState('');
   const [columns, setColumns] = useState<string[]>([]);
@@ -256,13 +258,13 @@ function UploadResponses({ programs }: { programs: ProgramOption[] }) {
 
   const matchedCount = questions.filter(q => questionColumns[q.no]).length;
   const programMissing = !detailColumns.program && !defaultProgram;
-  const yearMissing = !detailColumns.year && !/^\d{4}$/.test(year.trim());
+  const yearMissing = !detailColumns.year && !detailColumns.graduationYear && !/^\d{4}$/.test(year.trim());
 
   const send = async (dryRun: boolean) => {
     setBusy(true);
     setMessage(null);
     try {
-      const result = await apiService.uploadSurveyResponses({ formType, year, fileName, defaultProgramId: defaultProgram, rows: payloadRows, dryRun });
+      const result = await apiService.uploadSurveyResponses({ formType, year, fileName, defaultProgramId: defaultProgram, defaultBatch, rows: payloadRows, dryRun });
       if (dryRun) {
         setCheck(result);
       } else {
@@ -326,10 +328,14 @@ function UploadResponses({ programs }: { programs: ProgramOption[] }) {
           </div>
           {!detailColumns.year && (
             <div className="flex flex-col gap-1 w-72">
-              <label className={label}>This file has no year column. Its responses are from:</label>
+              <label className={label}>{detailColumns.graduationYear ? 'Year for rows without a graduation year (optional):' : 'This file has no year column. Its responses are from:'}</label>
               <input aria-label="Year of all responses" placeholder="e.g. 2026" className={`${input} w-28`} value={year} onChange={e => { setCheck(null); setYear(e.target.value); }} />
             </div>
           )}
+          <div className="flex flex-col gap-1 w-72">
+            <label className={label}>Batch for rows whose batch can't be read (e.g. "2022")</label>
+            <input aria-label="Batch for unreadable rows" placeholder="e.g. FA22 (optional)" className={`${input} w-40`} value={defaultBatch} onChange={e => { setCheck(null); setDefaultBatch(e.target.value); }} />
+          </div>
           {!detailColumns.program && (
             <div className="flex flex-col gap-1 w-72">
               <label className={label}>This file has no Program column. All its responses are for:</label>
@@ -375,8 +381,14 @@ function UploadResponses({ programs }: { programs: ProgramOption[] }) {
             <div className="space-y-2 text-xs">
               <Notice error={check.accepted === 0}>
                 {check.accepted} of {fileRows.length} responses are ready. Programmes: {Object.entries(check.programs).map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}. Years: {Object.entries(check.years || {}).map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}.
+                {' '}Batches: {Object.entries(check.batches || {}).map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}.
                 {check.replaces != null && ` This replaces the ${check.replaces} responses already saved for ${Object.keys(check.years || {}).join(', ')}.`}
               </Notice>
+              {Object.keys(check.unrecognizedPrograms || {}).length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-amber-900">
+                  These Program answers name no programme, so their responses count as "Not specified": {Object.entries(check.unrecognizedPrograms).map(([k, v]) => `"${k}" ${v}`).join(', ')}. They count in batch totals but in no programme's results.
+                </div>
+              )}
               {check.skipped > 0 && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-amber-900">
                   <p className="font-bold">{check.skipped} response{check.skipped === 1 ? '' : 's'} will be left out</p>
@@ -537,10 +549,70 @@ function SurveyResults({ programs }: { programs: ProgramOption[] }) {
   );
 }
 
+function AnalysisReport() {
+  const [formType, setFormType] = useState('exit');
+  const [available, setAvailable] = useState<string[]>([]);
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setData(null);
+    setChosen([]);
+    apiService.getSurveyAnalysis(formType).then(d => setAvailable(d.available)).catch((e: any) => setError(e.message));
+  }, [formType]);
+
+  const generate = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setData(await apiService.getSurveyAnalysis(formType, chosen));
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const byBatch = formType === 'internship' || formType === 'exit';
+
+  return (
+    <div className="space-y-4">
+      <div className={`${panel} flex flex-wrap gap-4 items-end`}>
+        <div className="flex flex-col gap-1">
+          <label className={label}>Survey</label>
+          <select aria-label="Analysis survey" className={input} value={formType} onChange={e => setFormType(e.target.value)}>
+            {FORM_TYPES.map(f => <option key={f.id} value={f.id}>{f.title}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className={label}>{byBatch ? 'Graduating Batches' : 'Graduation Years'} (none ticked = all)</label>
+          <div className="flex flex-wrap gap-3 text-xs text-slate-700 min-h-[34px] items-center">
+            {available.length === 0 && <span className="text-slate-500">No responses uploaded yet.</span>}
+            {available.map(g => (
+              <label key={g} className="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" aria-label={`Include ${g}`} checked={chosen.includes(g)}
+                  onChange={e => setChosen(prev => (e.target.checked ? [...prev, g] : prev.filter(x => x !== g)))} />
+                {g}
+              </label>
+            ))}
+          </div>
+        </div>
+        <button className={primary} disabled={busy || available.length === 0} onClick={generate}>
+          {busy ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ClipboardList className="w-3.5 h-3.5" />} Generate Report
+        </button>
+      </div>
+      {error && <Notice error>{error}</Notice>}
+      {data && <div className={`${panel} qa-print-area`}><SurveyAnalysisReport data={data} /></div>}
+    </div>
+  );
+}
+
 export default function SurveyManager({ programs, canEdit }: { programs: ProgramOption[]; canEdit: boolean }) {
   const tabs = [
     ...(canEdit ? [{ id: 'upload', label: 'Upload Responses' }] : []),
     { id: 'results', label: 'Survey Results' },
+    { id: 'analysis', label: 'Analysis Report' },
     { id: 'forms', label: canEdit ? 'Forms & Mapping' : 'Forms' },
   ];
   const [tab, setTab] = useState(tabs[0].id);
@@ -563,6 +635,7 @@ export default function SurveyManager({ programs, canEdit }: { programs: Program
         <>
           {tab === 'upload' && <UploadResponses programs={programs} />}
           {tab === 'results' && <SurveyResults programs={programs} />}
+          {tab === 'analysis' && <AnalysisReport />}
           {tab === 'forms' && <FormsAndMapping programs={programs} canEdit={canEdit} />}
         </>
       )}
