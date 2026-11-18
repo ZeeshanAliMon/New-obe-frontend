@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ClipboardList, FileUp, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ClipboardList, FileUp, Pencil, RefreshCw, Save, Trash2, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { apiService } from '../../services/apiService';
 import SurveyAnalysisReport from './SurveyAnalysisReport';
@@ -93,6 +93,8 @@ const label = 'text-[10px] text-slate-500 font-bold uppercase tracking-wider';
 const primary = 'flex items-center gap-1.5 px-4 py-2 bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold rounded-xl shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed';
 const th = 'px-3 py-2 font-semibold text-left';
 const td = 'px-3 py-2';
+const QUESTION_MAX_LENGTH = 500;
+const rowButton = 'inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed';
 
 const Notice = ({ error, children }: { error?: boolean; children: ReactNode }) => (
   <p className={`rounded-xl px-3 py-2 text-xs flex items-start gap-1.5 border ${error ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
@@ -107,10 +109,15 @@ function FormsAndMapping({ programs, canEdit }: { programs: ProgramOption[]; can
   const [edits, setEdits] = useState<Record<string, Record<number, string>>>({});
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [editingQuestion, setEditingQuestion] = useState<{ formType: string; no: number; text: string; error?: string } | null>(null);
+  const [savingQuestion, setSavingQuestion] = useState(false);
+  const [savedQuestion, setSavedQuestion] = useState<string | null>(null);
 
   useEffect(() => {
     if (!programId) return;
     setEdits({});
+    setEditingQuestion(null);
+    setSavedQuestion(null);
     apiService.getSurveyForms(programId).then(d => setForms(d.forms)).catch((e: any) => setMessage({ text: e.message, error: true }));
   }, [programId]);
 
@@ -127,6 +134,24 @@ function FormsAndMapping({ programs, canEdit }: { programs: ProgramOption[]; can
       setMessage({ text: e.message, error: true });
     } finally {
       setBusy(null);
+    }
+  };
+
+  const saveQuestion = async () => {
+    if (!editingQuestion) return;
+    const { formType, no, text } = editingQuestion;
+    setSavingQuestion(true);
+    try {
+      const saved = await apiService.saveSurveyQuestion(programId, formType, no, text);
+      setForms(prev => prev.map(f => (f.formType !== formType ? f : {
+        ...f, questions: f.questions.map(q => (q.no === no ? { ...q, text: saved.text } : q)),
+      })));
+      setEditingQuestion(null);
+      setSavedQuestion(`${formType}-${no}`);
+    } catch (e: any) {
+      setEditingQuestion(prev => (prev ? { ...prev, error: e.message } : prev));
+    } finally {
+      setSavingQuestion(false);
     }
   };
 
@@ -160,24 +185,78 @@ function FormsAndMapping({ programs, canEdit }: { programs: ProgramOption[]; can
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-slate-700">
                 <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider">
-                  <tr><th className={`${th} w-12`}>No.</th><th className={th}>Question</th><th className={`${th} w-44`}>Maps to</th></tr>
+                  <tr>
+                    <th className={`${th} w-12`}>No.</th>
+                    <th className={th}>Question</th>
+                    <th className={`${th} w-44`}>Maps to</th>
+                    {canEdit && <th className={`${th} w-40`}>Action</th>}
+                  </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {form.questions.map(q => {
                     const value = edits[form.formType]?.[q.no] ?? q.target;
+                    const questionKey = `${form.formType}-${q.no}`;
+                    const isEditing = editingQuestion?.formType === form.formType && editingQuestion.no === q.no;
+                    const draft = isEditing ? editingQuestion.text.trim() : '';
                     return (
                       <tr key={q.no}>
                         <td className={td}>{q.no}</td>
-                        <td className={td}>{q.text}</td>
+                        <td className={td}>
+                          {isEditing ? (
+                            <div className="space-y-1.5">
+                              <textarea
+                                aria-label={`${form.title} question ${q.no} text`}
+                                autoFocus
+                                rows={2}
+                                maxLength={QUESTION_MAX_LENGTH}
+                                className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                value={editingQuestion.text}
+                                onChange={e => setEditingQuestion({ formType: form.formType, no: q.no, text: e.target.value })}
+                                onKeyDown={e => { if (e.key === 'Escape' && !savingQuestion) setEditingQuestion(null); }}
+                              />
+                              {editingQuestion.error && <p role="alert" className="text-[11px] font-semibold text-rose-700">{editingQuestion.error}</p>}
+                              <p className="text-[11px] text-slate-500">This wording applies to every programme in the department.</p>
+                            </div>
+                          ) : q.text}
+                        </td>
                         <td className={td}>
                           {canEdit ? (
                             <select aria-label={`${form.title} question ${q.no} maps to`} className={`${input} w-full`} value={value}
                               onChange={e => setEdits(prev => ({ ...prev, [form.formType]: { ...(prev[form.formType] || {}), [q.no]: e.target.value } }))}>
-                              <option value="">Not mapped</option>
+                              <option value="">Choose {form.usedFor}</option>
                               {form.targets.map(t => <option key={t.id} value={t.id}>{labelOfTarget(t.id)} — {t.name.slice(0, 40)}</option>)}
                             </select>
                           ) : <span className="font-semibold">{labelOfTarget(value)}</span>}
                         </td>
+                        {canEdit && (
+                          <td className={td}>
+                            {isEditing ? (
+                              <div className="flex items-center gap-1.5">
+                                <button type="button" onClick={saveQuestion} disabled={savingQuestion || !draft || draft === q.text} className={`${rowButton} bg-indigo-700 hover:bg-indigo-800 text-white`}>
+                                  {savingQuestion ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Save
+                                </button>
+                                <button type="button" onClick={() => setEditingQuestion(null)} disabled={savingQuestion} className={`${rowButton} border border-slate-300 text-slate-600 hover:bg-slate-50`}>
+                                  <X className="w-3 h-3" /> Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  aria-label={`Edit ${form.title} question ${q.no}`}
+                                  onClick={() => { setSavedQuestion(null); setEditingQuestion({ formType: form.formType, no: q.no, text: q.text }); }}
+                                  disabled={!!editingQuestion}
+                                  className={`${rowButton} border border-slate-300 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700`}
+                                >
+                                  <Pencil className="w-3 h-3" /> Edit
+                                </button>
+                                {savedQuestion === questionKey && (
+                                  <span role="status" className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700"><CheckCircle2 className="w-3 h-3" /> Saved</span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     );
                   })}

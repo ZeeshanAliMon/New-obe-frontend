@@ -40,6 +40,7 @@ export default function SurveyAnalysisReport({ data }: { data: any }) {
   const kpiLabel = (no: number) => `KPI-${no}`;
   const fileBase = `${data.formTitle.replace(/[^\w]+/g, '_')}_Analysis_${groups.map(g => g.key).join('_')}`;
   const multi = groups.length > 1;
+  const mappedTargets = Array.from(new Set(kpis.flatMap(k => (k.target ? k.target.split(', ') : []))));
 
   const best = (s: Stats) => s.kpis.filter(k => k.average != null).reduce((a, k) => (k.average! > (a?.average ?? -1) ? k : a), null as KpiStat | null);
   const worst = (s: Stats) => s.kpis.filter(k => k.average != null).reduce((a, k) => (k.average! < (a?.average ?? 99) ? k : a), null as KpiStat | null);
@@ -99,7 +100,7 @@ export default function SurveyAnalysisReport({ data }: { data: any }) {
       info={[
         [byBatch ? 'Batches' : 'Graduates', groups.map(g => columnName(g.key)).join(', ') || '—'],
         ['Responses', total],
-        ['Statements', `${kpis.length}, one per ${target}`],
+        ['Statements', kpis.length],
         ['Scale', '5 Excellent, 4 Very Good, 3 Good, 2 Average, 1 Fail'],
       ]}
       notes={[
@@ -112,7 +113,7 @@ export default function SurveyAnalysisReport({ data }: { data: any }) {
           <section className="space-y-2">
             <h3 className="text-base font-bold text-[#1f3864]">1. Introduction</h3>
             <p>This report presents {multi ? 'a consolidated analysis' : 'an analysis'} of the {data.formTitle} for the {/^department/i.test(data.department) ? data.department : `Department of ${data.department}`}. {INTRO[data.formType]}</p>
-            <p>The survey contains {kpis.length} outcome-based statements, each aligned to a {target} ({kpis.map(k => k.target).filter((t, i, a) => a.indexOf(t) === i).join(', ')}). Each statement is rated on the five-point scale of the original form, where 5 = Excellent, 4 = Very Good, 3 = Good, 2 = Average and 1 = Fail.{data.formType !== 'internship' && ' An open-ended question also collects suggestions for improvement.'}</p>
+            <p>The survey contains {kpis.length} outcome-based statements, each aligned to a {target}{mappedTargets.length ? ` (${mappedTargets.join(', ')})` : ''}. Each statement is rated on the five-point scale of the original form, where 5 = Excellent, 4 = Very Good, 3 = Good, 2 = Average and 1 = Fail.{data.formType !== 'internship' && ' An open-ended question also collects suggestions for improvement.'}</p>
             <p>
               {groups.map(g => {
                 const rate = g.population && g.population >= g.stats.responses ? `, a response rate of about ${Math.round((g.stats.responses / g.population) * 100)}% of its ${g.population} students` : '';
@@ -152,7 +153,7 @@ export default function SurveyAnalysisReport({ data }: { data: any }) {
             <ReportGroupedBarChart categories={programCodes.map(c => (c === NOT_SPECIFIED ? 'Unspecified' : c))}
               series={groups.map(g => columnName(g.key))}
               value={(cat, s) => { const g = groups.find(x => columnName(x.key) === s)!; return g.composition[cat === 'Unspecified' ? NOT_SPECIFIED : cat] || 0; }}
-              max={Math.max(1, ...groups.flatMap(g => Object.values(g.composition)))} suffix="" showValues />
+              max={Math.max(1, ...groups.flatMap(g => Object.values(g.composition)))} suffix="" showValues valueDecimals={0} />
           </ReportChartBlock>
 
           <section data-pdf-block className="space-y-2">

@@ -101,10 +101,6 @@ export default function GaBatchReport({ data, labelOf }: { data: any; labelOf: (
   const attains = (s: BatchStudent, id: string) => (s.gaAttained ? s.gaAttained[id] === true : passes(s.gaScores?.[id]));
   const passed = gas.map(ga => students.filter(s => attains(s, ga.id)).length);
   const failed = gas.map((_, i) => students.length - passed[i]);
-  const minScore = gas.map(ga => {
-    const vals = students.map(s => s.gaScores?.[ga.id]).filter((v): v is number => v != null);
-    return vals.length ? Math.min(...vals) : null;
-  });
 
   const fileBase = `GA_Progress_Report_${batch || 'Batch'}`.replace(/[^\w.-]+/g, '_');
 
@@ -191,11 +187,6 @@ export default function GaBatchReport({ data, labelOf }: { data: any; labelOf: (
                   <td className={cell}>Total Student : {students.length}</td>
                   <td className={cell}>Passed Students &gt;&gt;&gt;</td>
                   {passed.map((n, i) => <td key={gas[i].id} className={`${cell} text-center`}>{n}</td>)}
-                </tr>
-                <tr className="font-bold">
-                  <td className={cell}></td>
-                  <td className={cell}>Min Student Marks &gt;&gt;&gt;</td>
-                  {minScore.map((v, i) => <td key={gas[i].id} className={`${cell} text-center`}>{fmt(v)}</td>)}
                 </tr>
               </tbody>
             </table>

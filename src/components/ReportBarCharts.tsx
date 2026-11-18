@@ -114,9 +114,9 @@ export function ReportBarChart({ items, percent = true, threshold, legend, yLabe
  * Grouped columns: one group per category, one bar per series (e.g. GA × academic year).
  * Percentages by default; `max` and `suffix` give another scale, such as a 1–5 rating.
  */
-export function ReportGroupedBarChart({ categories, series, value, threshold, max = 100, suffix = '%', thresholdLabel, showValues }: {
+export function ReportGroupedBarChart({ categories, series, value, threshold, max = 100, suffix = '%', thresholdLabel, showValues, valueDecimals }: {
   categories: string[]; series: string[]; value: (cat: string, s: string) => number | null; threshold?: number;
-  max?: number; suffix?: string; thresholdLabel?: string; showValues?: boolean;
+  max?: number; suffix?: string; thresholdLabel?: string; showValues?: boolean; valueDecimals?: number;
 }) {
   const W = 900, H = 320;
   const padL = 50, padR = 16, padT = 20, padB = 50;
@@ -124,7 +124,7 @@ export function ReportGroupedBarChart({ categories, series, value, threshold, ma
   const ticks = max === 100 && suffix === '%' ? [0, 25, 50, 75, 100] : niceTicks(max, false);
   const top = ticks[ticks.length - 1];
   const y = (v: number) => padT + plotH - (Math.max(0, Math.min(top, v)) / top) * plotH;
-  const decimals = suffix === '%' ? 1 : Number.isInteger(max) && max > 5 ? 0 : 2;
+  const decimals = valueDecimals ?? (suffix === '%' ? 1 : Number.isInteger(max) && max > 5 ? 0 : 2);
   const groupW = plotW / Math.max(1, categories.length);
   const barW = Math.max(5, Math.min(30, (groupW * 0.8) / Math.max(1, series.length)));
   const colors = series.map((_, i) => SERIES[series.length === 1 ? 2 : Math.round((i / Math.max(1, series.length - 1)) * (SERIES.length - 1))]);

@@ -3,9 +3,9 @@ import ReportChartBlock from './ReportChartBlock';
 import { ReportBarChart, ReportGroupedBarChart, RC } from './ReportBarCharts';
 
 /**
- * Printable QA reports: Cohort Level GA Attainment, CO Attainment Summary, PO
- * Attainment, At-Risk Students, Instructor Performance, Curriculum Gap Analysis
- * and Term Comparison. Each is a ReportDocument (downloadable PDF) with tables and a
+ * Printable QA reports: Cohort Level GA Attainment, GA by Course, CO Attainment Summary, PO
+ * Attainment, At-Risk Students and Curriculum Gap Analysis.
+ * Each is a ReportDocument (downloadable PDF) with tables and a
  * chart that appears once and also downloads on its own.
  */
 
@@ -345,105 +345,6 @@ export function AtRiskReport({ data, ctx, threshold }: { data: any; ctx: ReportC
   );
 }
 
-/* ─────────────────────────── Instructor Performance ─────────────────────────── */
-
-export function InstructorPerformanceReport({ data, ctx, threshold }: { data: any; ctx: ReportContext; threshold: number }) {
-  const insts: any[] = [...(data.instructors || [])].sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  const avgOf = (i: any) => { const cs = i.courses || []; return cs.length ? cs.reduce((a: number, c: any) => a + num(c.avgCLOAttainment), 0) / cs.length : null; };
-  const allCourses = insts.flatMap(i => i.courses || []);
-  const below = allCourses.filter((c: any) => c.belowThreshold).length;
-  const fileBase = `Instructor_Performance_${data.departmentId || ''}`;
-
-  return (
-    <ReportDocument
-      title="Instructor Performance Report"
-      subtitle={ctx.departmentName}
-      fileBase={fileBase}
-      kpi={threshold.toFixed(1)}
-      canExport={insts.length > 0}
-      info={[
-        ['Department', ctx.departmentName || data.departmentId],
-        ['Instructors', insts.length],
-        ['Active Courses', allCourses.length],
-        ['Below Threshold', `${below} / ${allCourses.length}`],
-      ]}
-      notes={[`Covers active (current) course offerings. Each CLO's attainment is the percentage of students who attain it; a course is Below Target when the average over its CLOs is below ${threshold}%.`]}
-    >
-      {insts.length === 0 ? <p className="text-sm text-red-600 font-bold text-center py-6">No instructors found.</p> : (
-        <>
-          <table className="w-full border-collapse text-[11.5px]">
-            <thead>
-              <tr className="bg-slate-300">
-                <th className={`${th} w-32`}>Course</th>
-                <th className={th}>Title</th>
-                <th className={`${th} w-28 text-center`}>Term</th>
-                <th className={`${th} w-20 text-center`}>Semester</th>
-                <th className={`${th} w-24 text-center`}>Avg CLO %</th>
-                <th className={`${th} w-24 text-center`}>Status</th>
-              </tr>
-            </thead>
-            {insts.map(inst => (
-              <tbody key={inst.employeeId || inst.name}>
-                <tr className="bg-slate-100 font-bold">
-                  <td className={td} colSpan={6}>
-                    {inst.name}{inst.designation ? ` — ${inst.designation}` : ''}{inst.employeeId ? ` (${inst.employeeId})` : ''}
-                    <span className="font-normal"> · {inst.totalCourses ?? (inst.courses || []).length} courses, {inst.coursesBelowThreshold ?? 0} below threshold</span>
-                  </td>
-                </tr>
-                {(inst.courses || []).length === 0 ? (
-                  <tr><td className={`${td} italic text-slate-500`} colSpan={6}>No active courses.</td></tr>
-                ) : (inst.courses || []).map((c: any, j: number) => (
-                  <tr key={j}>
-                    <td className={td}>{c.courseCode}{c.programCode ? ` (${c.programCode})` : ''}</td>
-                    <td className={td}>{c.courseTitle}</td>
-                    <td className={`${td} text-center`}>{termLabel(c.academicYear) || '—'}</td>
-                    <td className={`${td} text-center`}>{c.semester || '—'}</td>
-                    <td className={`${td} text-center`}>{pct1(c.avgCLOAttainment)}</td>
-                    <td className={`${td} text-center ${statusCls(!c.belowThreshold)}`}>{c.belowThreshold ? 'Below Target' : 'On Track'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            ))}
-          </table>
-
-          <div data-pdf-block className="space-y-2 pt-2">
-            <h3 className="text-base font-bold">Summary</h3>
-            <table className="w-full border-collapse text-[11.5px]">
-              <thead>
-                <tr className="bg-slate-300">
-                  <th className={th}>Instructor</th>
-                  <th className={`${th} w-24 text-center`}>Courses</th>
-                  <th className={`${th} w-28 text-center`}>Below Target</th>
-                  <th className={`${th} w-28 text-center`}>Avg CLO %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {insts.map(inst => { const a = avgOf(inst); return (
-                  <tr key={inst.employeeId || inst.name}>
-                    <td className={`${td} font-semibold`}>{inst.name}</td>
-                    <td className={`${td} text-center`}>{(inst.courses || []).length}</td>
-                    <td className={`${td} text-center ${inst.coursesBelowThreshold ? 'text-red-700 font-semibold' : ''}`}>{inst.coursesBelowThreshold ?? 0}</td>
-                    <td className={`${td} text-center`}>{a == null ? '—' : pct1(a)}</td>
-                  </tr>
-                ); })}
-              </tbody>
-            </table>
-          </div>
-
-          <ReportChartBlock title="Average CLO Attainment by Instructor" subtitle={`${ctx.departmentName || ''} — mean of each instructor's active-course CLO attainment`} fileBase={fileBase}>
-            <ReportBarChart
-              threshold={threshold}
-              rotateLabels={insts.length > 6}
-              legend={[{ color: RC.good, label: 'On Track' }, { color: RC.bad, label: 'Below Target' }]}
-              items={insts.filter(i => (i.courses || []).length).map(i => { const a = avgOf(i) ?? 0; return { label: String(i.name), value: a, color: a >= threshold ? RC.good : RC.bad }; })}
-            />
-          </ReportChartBlock>
-        </>
-      )}
-    </ReportDocument>
-  );
-}
-
 /* ─────────────────────────── Curriculum Gap Analysis ─────────────────────────── */
 
 export function GapAnalysisReport({ data, ctx }: { data: any; ctx: ReportContext }) {
@@ -508,67 +409,168 @@ export function GapAnalysisReport({ data, ctx }: { data: any; ctx: ReportContext
   );
 }
 
-/* ───────────────────────────── Term Comparison ───────────────────────────── */
+/* ─────────────────────── Direct Assessment of GA by Course ─────────────────── */
 
-export function CohortComparisonReport({ data, ctx, threshold }: { data: any; ctx: ReportContext; threshold: number }) {
-  const cohorts: any[] = data.cohorts || [];
-  const termKey = (t: string) => { const m = String(t).match(/(spring|summer|fall)\D*(\d{4})/i); return m ? Number(m[2]) * 10 + ['spring', 'summer', 'fall'].indexOf(m[1].toLowerCase()) : 99999; };
-  // Without a GA filter the backend sends one overall figure per year (no gaId on the rows).
-  const ALL = '__all__';
-  const gaOf = (c: any) => String(c.gaId || data.gaId || ALL);   // the backend sends gaId '' for "all"
-  const gaName = (ga: string) => (ga === ALL ? 'All GAs' : ctx.gaLabel(ga));
-  const gas: string[] = Array.from(new Set(cohorts.map(gaOf))).sort((a, b) => lastNum(a) - lastNum(b));
-  const years: string[] = Array.from(new Set(cohorts.map(c => String(c.academicYear)))).sort((a, b) => termKey(a) - termKey(b) || a.localeCompare(b));
-  const val = (ga: string, yr: string) => { const c = cohorts.find(x => gaOf(x) === ga && String(x.academicYear) === yr); return c ? num(c.attainmentPercent) : null; };
-  const fileBase = `Term_Comparison_${ctx.programCode || data.programId || ''}${data.gaId ? `_${ctx.gaLabel(data.gaId)}` : ''}`;
+export function GaCourseReport({ data, ctx, offeringIdx, onOfferingChange }: {
+  data: any; ctx: ReportContext; offeringIdx: number; onOfferingChange: (idx: number) => void;
+}) {
+  const offerings: any[] = data.offerings || [];
+  if (offerings.length === 0) {
+    return <p className="text-xs text-slate-500">No students are enrolled in {data.courseCode} yet.</p>;
+  }
+
+  const activeIdx = Math.min(offeringIdx, offerings.length - 1);
+  const offering = offerings[activeIdx];
+  const gas: any[] = offering.gas || [];
+  const assessed = gas.filter(g => g.questionCount > 0);
+  const students: any[] = offering.students || [];
+  const threshold = num(data.gaAttainmentThreshold ?? 50);
+  const questionThreshold = num(data.questionPassThreshold ?? 50);
+  const classAttains = (g: any) => num(g.percentStudentsAttained) >= threshold;
+  const attainedCount = assessed.filter(classAttains).length;
+  const term = termLabel(offering.academicYear) || '—';
+  const fileBase = `GA_by_Course_${data.courseCode || ''}_${offering.academicYear || ''}`;
+
+  const notes: string[] = [
+    `A student passes a question at ${questionThreshold}% of its marks and attains a GA by passing at least ${threshold}% of the questions mapped to it through their CLOs. A GA is attained for the course when at least ${threshold}% of the class attains it.`,
+    'Student figures are the percentage of the GA\'s questions passed. Shaded cells are not attained.',
+  ];
+  if (offering.unmappedQuestionCount > 0) {
+    notes.push(`${offering.unmappedQuestionCount} of ${offering.questionCount} graded questions are mapped to a CLO that has no GA (or to no CLO), so they are not counted in any GA.`);
+  }
 
   return (
-    <ReportDocument
-      title="Term Comparison Report"
-      subtitle={subtitleOf(ctx)}
-      fileBase={fileBase}
-      kpi={threshold.toFixed(1)}
-      canExport={cohorts.length > 0}
-      info={[
-        ['Programme', progLabel(ctx, data.programId)],
-        ['Graduate Attribute', data.gaId ? `${ctx.gaLabel(data.gaId)}${data.gaName ? ` — ${data.gaName}` : ''}` : 'All GAs'],
-        ['Terms', years.map(termLabel).join(', ') || '—'],
-        ['GAs Compared', gas.length],
-      ]}
-      notes={[`The direct assessment of GA for each term, so terms can be compared over time: the average of the course scores in that term. Shaded cells are below the ${threshold}% KPI; "—" means no assessed results for that term.`]}
-    >
-      {cohorts.length === 0 ? <p className="text-sm text-red-600 font-bold text-center py-6">No term data — course offerings need a term set.</p> : (
-        <>
-          <table className="w-full border-collapse text-[11.5px]">
-            <thead>
-              <tr className="bg-slate-300">
-                <th className={`${th} w-20`}>GA</th>
-                {years.map(y => <th key={y} className={`${th} text-center`}>{termLabel(y)}</th>)}
-                <th className={`${th} w-24 text-center`}>Change</th>
-              </tr>
-            </thead>
-            <tbody>
-              {gas.map(ga => {
-                const vals = years.map(y => val(ga, y));
-                const known = vals.filter((v): v is number => v != null);
-                const delta = known.length > 1 ? known[known.length - 1] - known[0] : null;
-                return (
-                  <tr key={ga}>
-                    <td className={`${td} font-semibold`}>{gaName(ga)}</td>
-                    {vals.map((v, i) => <td key={years[i]} className={`${td} text-center ${v != null && v < threshold ? 'bg-slate-200' : ''}`}>{v == null ? '—' : pct1(v)}</td>)}
-                    <td className={`${td} text-center font-semibold ${delta == null ? '' : delta >= 0 ? 'text-green-700' : 'text-red-700'}`}>{delta == null ? '—' : `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}`}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          <ReportChartBlock title="Direct Assessment of GA by Term" subtitle={years.length > 1 ? 'Each colour is a term; darker = more recent' : `Term ${termLabel(years[0])}`} fileBase={fileBase}>
-            <ReportGroupedBarChart categories={gas.map(gaName)} series={years.map(termLabel)} threshold={threshold}
-              value={(cat, yr) => val(gas[gas.map(gaName).indexOf(cat)], years[years.map(termLabel).indexOf(yr)])} />
-          </ReportChartBlock>
-        </>
+    <div className="space-y-4">
+      {offerings.length > 1 && (
+        <div className="flex flex-wrap gap-1.5 print:hidden">
+          {offerings.map((o, i) => (
+            <button
+              key={o.id}
+              type="button"
+              aria-pressed={i === activeIdx}
+              onClick={() => onOfferingChange(i)}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer ${i === activeIdx ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-300'}`}
+            >
+              {termLabel(o.academicYear) || 'No term'} · {o.instructor}{o.status === 'closed' ? ' (closed)' : ''}
+            </button>
+          ))}
+        </div>
       )}
-    </ReportDocument>
+
+      <ReportDocument
+        title="Direct Assessment of GA by Course"
+        subtitle={subtitleOf(ctx)}
+        fileBase={fileBase}
+        kpi={threshold.toFixed(1)}
+        canExport={assessed.length > 0}
+        info={[
+          ['Programme', progLabel(ctx, data.programId)],
+          ['Course', `${data.courseCode} — ${data.courseTitle}`],
+          ['Term', term],
+          ['Instructor', offering.instructor],
+          ['Students', offering.studentCount],
+          ['Graded Questions', offering.questionCount],
+          ['GAs Attained', `${attainedCount} / ${assessed.length}`],
+          ['Course Status', offering.status === 'closed' ? 'Closed' : 'Active'],
+        ]}
+        notes={notes}
+      >
+        {assessed.length === 0 ? <p className="text-sm text-red-600 font-bold text-center py-6">No questions of this course are mapped to a GA yet.</p> : (
+          <>
+            <table className="w-full border-collapse text-[11.5px]">
+              <thead>
+                <tr className="bg-slate-300">
+                  <th className={`${th} w-14`}>GA</th>
+                  <th className={th}>Title</th>
+                  <th className={`${th} w-28 !text-center`}>CLOs</th>
+                  <th className={`${th} w-20 !text-center`}>Questions</th>
+                  <th className={`${th} w-20 !text-center`}>Students Attained</th>
+                  <th className={`${th} w-20 !text-center`}>% Attained</th>
+                  <th className={`${th} w-20 !text-center`}>Average %</th>
+                  <th className={`${th} w-24 !text-center`}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gas.map(g => {
+                  const hasQuestions = g.questionCount > 0;
+                  return (
+                    <tr key={g.id}>
+                      <td className={`${td} font-semibold`}>{ctx.gaLabel(g.id)}</td>
+                      <td className={td}>{g.title}</td>
+                      <td className={`${td} text-center`}>{(g.clos || []).join(', ') || '—'}</td>
+                      <td className={`${td} text-center`}>{g.questionCount}</td>
+                      <td className={`${td} text-center`}>{hasQuestions ? `${g.studentsAttained} / ${g.studentCount}` : '—'}</td>
+                      <td className={`${td} text-center font-bold`}>{hasQuestions ? pct1(g.percentStudentsAttained) : '—'}</td>
+                      <td className={`${td} text-center`}>{hasQuestions ? pct1(g.averageAttainment) : '—'}</td>
+                      <td className={`${td} text-center ${hasQuestions ? statusCls(classAttains(g)) : 'text-slate-500'}`}>
+                        {hasQuestions ? (classAttains(g) ? 'Attained' : 'Not Attained') : 'No Questions'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            <h3 className="text-base font-bold pt-2">Student-wise Direct Assessment of GA</h3>
+            <table className="w-full border-collapse text-[11.5px]">
+              <thead>
+                <tr className="bg-slate-300">
+                  <th className={`${th} w-10 !text-center`}>S.No</th>
+                  <th className={`${th} w-36`}>Reg No</th>
+                  <th className={th}>Student Name</th>
+                  {assessed.map(g => <th key={g.id} className={`${th} w-16 !text-center`}>{ctx.gaLabel(g.id)}</th>)}
+                  <th className={`${th} w-20 !text-center`}>GAs Attained</th>
+                </tr>
+              </thead>
+              <tbody>
+                {students.map((s, i) => (
+                  <tr key={s.regNo}>
+                    <td className={`${td} text-center`}>{i + 1}</td>
+                    <td className={td}>{s.regNo}</td>
+                    <td className={td}>{s.name}</td>
+                    {assessed.map(g => {
+                      const result = s.gas?.[g.id];
+                      return (
+                        <td
+                          key={g.id}
+                          title={result ? `${result.passed} of ${result.total} questions passed` : undefined}
+                          className={`${td} text-center ${result && !result.attained ? 'bg-slate-200' : ''}`}
+                        >
+                          {result ? pct1(result.percent) : '—'}
+                        </td>
+                      );
+                    })}
+                    <td className={`${td} text-center font-semibold`}>{assessed.filter(g => s.gas?.[g.id]?.attained).length} / {assessed.length}</td>
+                  </tr>
+                ))}
+                <tr className="bg-slate-100 font-bold">
+                  <td className={td} colSpan={3}>Students Attained (out of {offering.studentCount})</td>
+                  {assessed.map(g => <td key={g.id} className={`${td} text-center`}>{g.studentsAttained}</td>)}
+                  <td className={td}></td>
+                </tr>
+              </tbody>
+            </table>
+
+            <ReportChartBlock
+              title="Students Attaining Each GA"
+              subtitle={`${data.courseCode} — ${data.courseTitle}, ${term}: percentage of the class attaining each GA, against the ${threshold}% KPI`}
+              fileBase={fileBase}
+            >
+              <ReportBarChart
+                threshold={threshold}
+                yLabel="Students Attained (%)"
+                legend={[{ color: RC.good, label: 'Attained' }, { color: RC.bad, label: 'Not Attained' }]}
+                items={assessed.map(g => ({
+                  label: ctx.gaLabel(g.id),
+                  value: num(g.percentStudentsAttained),
+                  color: classAttains(g) ? RC.good : RC.bad,
+                  title: `${ctx.gaLabel(g.id)} — ${g.title}: ${g.studentsAttained} of ${g.studentCount} students`,
+                }))}
+              />
+            </ReportChartBlock>
+          </>
+        )}
+      </ReportDocument>
+    </div>
   );
 }

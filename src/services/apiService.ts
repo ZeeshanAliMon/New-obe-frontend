@@ -1519,6 +1519,12 @@ export const apiService = {
     }));
   },
 
+  async saveSurveyQuestion(programId: string, formType: string, questionNo: number, text: string) {
+    return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/questions/`, {
+      method: 'PUT', headers: getHeaders(), body: JSON.stringify({ programId, formType, questionNo, text }),
+    }));
+  },
+
   async getSurveyUploads() {
     return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/uploads/`, { headers: getHeaders() }));
   },
@@ -1680,21 +1686,6 @@ export const apiService = {
   async getAtRiskStudents(programId: string, semester?: string) {
     let url = `${BASE_URL}/reports/at-risk-students/?programId=${encodeURIComponent(programId)}`;
     if (semester) url += `&semester=${encodeURIComponent(semester)}`;
-    const res = await fetchWithTimeout(url, { headers: getHeaders() });
-    return res.ok ? res.json() : null;
-  },
-
-  async getInstructorPerformance(departmentId: string) {
-    const res = await fetchWithTimeout(
-      `${BASE_URL}/reports/instructor-performance/?departmentId=${encodeURIComponent(departmentId)}`,
-      { headers: getHeaders() }
-    );
-    return res.ok ? res.json() : null;
-  },
-
-  async getCohortComparison(programId: string, gaId?: string) {
-    let url = `${BASE_URL}/reports/cohort-comparison/?programId=${encodeURIComponent(programId)}`;
-    if (gaId) url += `&gaId=${encodeURIComponent(gaId)}`;
     const res = await fetchWithTimeout(url, { headers: getHeaders() });
     return res.ok ? res.json() : null;
   },
