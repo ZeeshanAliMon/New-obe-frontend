@@ -549,32 +549,62 @@ function SurveyResults({ programs }: { programs: ProgramOption[] }) {
   );
 }
 
-function AnalysisReport() {
+function AnalysisReport({ canEdit }: { canEdit: boolean }) {
   const [formType, setFormType] = useState('exit');
+  const [year, setYear] = useState('');
+  const [years, setYears] = useState<number[]>([]);
   const [available, setAvailable] = useState<string[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
   const [data, setData] = useState<any>(null);
+  const [sentTo, setSentTo] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setData(null);
     setChosen([]);
-    apiService.getSurveyAnalysis(formType).then(d => setAvailable(d.available)).catch((e: any) => setError(e.message));
+    setYear('');
+    apiService.getSurveyAnalysis(formType).then(d => { setAvailable(d.available); setYears(d.years || []); }).catch((e: any) => setError(e.message));
   }, [formType]);
+
+  const changeYear = (value: string) => {
+    setYear(value);
+    setData(null);
+    setChosen([]);
+    apiService.getSurveyAnalysis(formType, [], value).then(d => setAvailable(d.available)).catch((e: any) => setError(e.message));
+  };
 
   const generate = async () => {
     setBusy(true);
     setError(null);
     try {
-      setData(await apiService.getSurveyAnalysis(formType, chosen));
+      const d = await apiService.getSurveyAnalysis(formType, chosen, year);
+      setData(d);
+      setSentTo(Object.fromEntries(d.groups.map((g: any) => [g.key, g.populationSource === 'entered' ? String(g.population) : ''])));
     } catch (e: any) {
       setError(e.message);
     } finally {
       setBusy(false);
     }
   };
-  const byBatch = formType === 'internship' || formType === 'exit';
+
+  const saveSentTo = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      for (const g of data.groups) {
+        const entered = g.populationSource === 'entered' ? String(g.population) : '';
+        if ((sentTo[g.key] || '').trim() !== entered) await apiService.setSurveyRecipients(formType, g.key, (sentTo[g.key] || '').trim());
+      }
+    } catch (e: any) {
+      setError(e.message);
+      setBusy(false);
+      return;
+    }
+    await generate();
+  };
+  const groupLabel = formType === 'exit' ? 'Graduating Batches' : formType === 'internship' ? 'Programs' : 'Graduation Years';
+  const sentToWord = formType === 'exit' ? 'students of the batch' : formType === 'internship' ? "students of the interns' batches" : formType === 'alumni' ? 'graduates of that year' : '';
 
   return (
     <div className="space-y-4">
@@ -586,7 +616,14 @@ function AnalysisReport() {
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <label className={label}>{byBatch ? 'Graduating Batches' : 'Graduation Years'} (none ticked = all)</label>
+          <label className={label}>{formType === 'internship' ? 'Internship Year' : 'Year'}</label>
+          <select aria-label="Analysis year" className={input} value={year} onChange={e => changeYear(e.target.value)}>
+            <option value="">All years</option>
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className={label}>{groupLabel} (none ticked = all)</label>
           <div className="flex flex-wrap gap-3 text-xs text-slate-700 min-h-[34px] items-center">
             {available.length === 0 && <span className="text-slate-500">No responses uploaded yet.</span>}
             {available.map(g => (
@@ -603,6 +640,37 @@ function AnalysisReport() {
         </button>
       </div>
       {error && <Notice error>{error}</Notice>}
+      {data && data.groups.length > 0 && (
+        <div className={`${panel} space-y-2 print:hidden`}>
+          <h3 className="text-sm font-bold text-slate-900">Responded out of how many</h3>
+          <p className="text-xs text-slate-500">
+            Only some people fill in a survey. {canEdit ? 'Enter how many people each survey was sent to' : 'QA enters how many people each survey was sent to'}
+            {sentToWord ? `; left blank, the report counts the ${sentToWord} from admissions.` : '; there is no admissions count for employers, so it must be entered.'}
+          </p>
+          <table className="text-xs">
+            <thead><tr className="text-left text-slate-500"><th className="pr-6 py-1">{groupLabel.replace(/s$/, '')}</th><th className="pr-6">Responded</th><th className="pr-6">Sent to</th><th>Response rate</th></tr></thead>
+            <tbody>
+              {data.groups.map((g: any) => (
+                <tr key={g.key}>
+                  <td className="pr-6 py-1 font-semibold">{g.key}</td>
+                  <td className="pr-6">{g.stats.responses}</td>
+                  <td className="pr-6">
+                    {canEdit ? (
+                      <input aria-label={`Sent to for ${g.key}`} className={`${input} w-24 py-1`} inputMode="numeric"
+                        placeholder={g.countedStudents ? String(g.countedStudents) : 'Not entered'} value={sentTo[g.key] ?? ''}
+                        onChange={e => setSentTo(prev => ({ ...prev, [g.key]: e.target.value.replace(/[^\d]/g, '') }))} />
+                    ) : (g.population ?? 'Not entered')}
+                  </td>
+                  <td>{g.population && g.population >= g.stats.responses ? `${Math.round((g.stats.responses / g.population) * 100)}%` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {canEdit && (
+            <button className={primary} disabled={busy} onClick={saveSentTo}><Save className="w-3.5 h-3.5" /> Save and Update Report</button>
+          )}
+        </div>
+      )}
       {data && <div className={`${panel} qa-print-area`}><SurveyAnalysisReport data={data} /></div>}
     </div>
   );
@@ -635,7 +703,7 @@ export default function SurveyManager({ programs, canEdit }: { programs: Program
         <>
           {tab === 'upload' && <UploadResponses programs={programs} />}
           {tab === 'results' && <SurveyResults programs={programs} />}
-          {tab === 'analysis' && <AnalysisReport />}
+          {tab === 'analysis' && <AnalysisReport canEdit={canEdit} />}
           {tab === 'forms' && <FormsAndMapping programs={programs} canEdit={canEdit} />}
         </>
       )}

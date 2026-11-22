@@ -1541,10 +1541,18 @@ export const apiService = {
     return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/results/?${params}`, { headers: getHeaders() }));
   },
 
-  async getSurveyAnalysis(formType: string, groups?: string[]) {
+  async getSurveyAnalysis(formType: string, groups?: string[], year?: string) {
     const params = new URLSearchParams({ formType });
     if (groups && groups.length) params.set('groups', groups.join(','));
+    if (year) params.set('year', year);
     return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/analysis/?${params}`, { headers: getHeaders() }));
+  },
+
+  /** How many people a survey group was sent to; a blank count goes back to the admissions count. */
+  async setSurveyRecipients(formType: string, groupKey: string, count: string) {
+    return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/analysis/`, {
+      method: 'PUT', headers: getHeaders(), body: JSON.stringify({ formType, groupKey, count }),
+    }));
   },
 
   async getProgramGAAttainment(programId: string) {
