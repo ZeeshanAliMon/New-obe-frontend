@@ -564,6 +564,7 @@ function AnalysisReport({ canEdit }: { canEdit: boolean }) {
     setData(null);
     setChosen([]);
     setYear('');
+    setError(null);
     apiService.getSurveyAnalysis(formType).then(d => { setAvailable(d.available); setYears(d.years || []); }).catch((e: any) => setError(e.message));
   }, [formType]);
 
@@ -661,7 +662,10 @@ function AnalysisReport({ canEdit }: { canEdit: boolean }) {
                         onChange={e => setSentTo(prev => ({ ...prev, [g.key]: e.target.value.replace(/[^\d]/g, '') }))} />
                     ) : (g.population ?? 'Not entered')}
                   </td>
-                  <td>{g.population && g.population >= g.stats.responses ? `${Math.round((g.stats.responses / g.population) * 100)}%` : '—'}</td>
+                  <td>
+                    {g.population && g.population >= g.stats.responses ? `${Math.round((g.stats.responses / g.population) * 100)}%`
+                      : g.population ? <span className="text-red-600 font-semibold">Fewer than responded, please check</span> : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>
