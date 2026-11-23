@@ -51,8 +51,8 @@ function Legend({ items, x, y }: { items: LegendEntry[]; x: number; y: number })
 const legendWidth = (items: LegendEntry[]) => items.reduce((a, it) => a + 24 + it.label.length * 6.2, 0);
 
 /** One bar per item. `percent` fixes the axis at 0–100 and draws the threshold line. */
-export function ReportBarChart({ items, percent = true, threshold, legend, yLabel, rotateLabels }: {
-  items: BarItem[]; percent?: boolean; threshold?: number; legend?: LegendEntry[]; yLabel?: string; rotateLabels?: boolean;
+export function ReportBarChart({ items, percent = true, threshold, thresholdLabel, legend, yLabel, rotateLabels }: {
+  items: BarItem[]; percent?: boolean; threshold?: number; thresholdLabel?: string; legend?: LegendEntry[]; yLabel?: string; rotateLabels?: boolean;
 }) {
   const W = 900;
   const rotate = rotateLabels ?? items.length > 10;
@@ -102,7 +102,7 @@ export function ReportBarChart({ items, percent = true, threshold, legend, yLabe
       {percent && threshold != null && (
         <>
           <line x1={padL} x2={padL + plotW} y1={y(threshold)} y2={y(threshold)} stroke={RC.ink} strokeDasharray="5 4" strokeWidth={1.2} />
-          <text x={padL + plotW - 4} y={y(threshold) - 5} textAnchor="end" fontSize={10} fill={RC.ink}>KPI {threshold}%</text>
+          <text x={padL + plotW - 4} y={y(threshold) - 5} textAnchor="end" fontSize={10} fill={RC.ink}>{thresholdLabel || `KPI ${threshold}%`}</text>
         </>
       )}
       {legend && legend.length > 0 && <Legend items={legend} x={padL + plotW / 2 - legendWidth(legend) / 2} y={H - 10} />}
@@ -167,6 +167,52 @@ export function ReportGroupedBarChart({ categories, series, value, threshold, ma
         </>
       )}
       <Legend items={legend} x={padL + plotW / 2 - legendWidth(legend) / 2} y={H - 10} />
+    </svg>
+  );
+}
+
+// Categorical slots for parts of a whole, in fixed order; the last is for "not responded".
+const PIE = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#6250d6'];
+const PIE_REST = '#c3c2b7';
+
+/**
+ * Parts of a whole, each slice labelled with its name, share and count (so it never
+ * relies on colour). `rest` marks the item drawn in neutral grey, e.g. "Not responded".
+ */
+export function ReportPieChart({ items, rest }: { items: { label: string; value: number }[]; rest?: string }) {
+  const W = 900, H = 340, cx = 450, cy = 170, r = 125;
+  const shown = items.filter(it => it.value > 0);
+  const total = shown.reduce((a, it) => a + it.value, 0);
+  let colorIndex = 0;
+  const colors = shown.map(it => (it.label === rest ? PIE_REST : PIE[colorIndex++ % PIE.length]));
+  let angle = -Math.PI / 2;
+  const point = (a: number, radius: number) => [cx + radius * Math.cos(a), cy + radius * Math.sin(a)];
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" style={{ display: 'block', fontFamily: 'Arial, Helvetica, sans-serif' }}>
+      {total === 0 && <text x={cx} y={cy} textAnchor="middle" fontSize={12} fill={RC.ink2}>No data</text>}
+      {shown.map((it, i) => {
+        const sweep = (it.value / total) * Math.PI * 2;
+        const start = angle, end = angle + sweep, mid = start + sweep / 2;
+        angle = end;
+        const [x1, y1] = point(start, r), [x2, y2] = point(end, r);
+        const path = shown.length === 1
+          ? `M ${cx - r} ${cy} a ${r} ${r} 0 1 0 ${2 * r} 0 a ${r} ${r} 0 1 0 ${-2 * r} 0`
+          : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x2} ${y2} Z`;
+        const [ix, iy] = point(mid, r * 0.62);
+        const [ox, oy] = point(mid, r + 16);
+        const share = `${((it.value / total) * 100).toFixed(0)}%`;
+        return (
+          <g key={it.label}>
+            <path d={path} fill={colors[i]} stroke="#ffffff" strokeWidth={2}>
+              <title>{`${it.label}: ${it.value} (${share})`}</title>
+            </path>
+            <text x={ix} y={iy - 2} textAnchor="middle" fontSize={11} fontWeight={700} fill={RC.ink}>{share}</text>
+            <text x={ix} y={iy + 12} textAnchor="middle" fontSize={10} fill={RC.ink}>({it.value})</text>
+            <text x={ox} y={oy + 4} textAnchor={Math.cos(mid) >= 0 ? 'start' : 'end'} fontSize={11} fill={RC.ink2}>{it.label}</text>
+          </g>
+        );
+      })}
     </svg>
   );
 }

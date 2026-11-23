@@ -1548,6 +1548,12 @@ export const apiService = {
     return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/analysis/?${params}`, { headers: getHeaders() }));
   },
 
+  async getAlumniReport(programId: string, batches?: string[]) {
+    const params = new URLSearchParams({ programId });
+    if (batches && batches.length) params.set('batches', batches.join(','));
+    return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/alumni-report/?${params}`, { headers: getHeaders() }));
+  },
+
   /** How many people a survey group was sent to; a blank count goes back to the admissions count. */
   async setSurveyRecipients(formType: string, groupKey: string, count: string) {
     return this._surveyJson(await fetchWithTimeout(`${BASE_URL}/surveys/analysis/`, {

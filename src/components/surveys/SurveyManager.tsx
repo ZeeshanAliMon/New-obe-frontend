@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, ClipboardList, FileUp, RefreshCw, Save, Tr
 import * as XLSX from 'xlsx';
 import { apiService } from '../../services/apiService';
 import SurveyAnalysisReport from './SurveyAnalysisReport';
+import AlumniSurveyReport from './AlumniSurveyReport';
 
 /**
  * The four NCEAC surveys. The forms run in Microsoft Forms; QA uploads the
@@ -35,9 +36,10 @@ const DETAIL_FIELDS: { key: string; label: string; match: string[] }[] = [
   { key: 'supervisorName', label: 'Supervisor Name', match: ['supervisor'] },
   { key: 'employeeName', label: 'Employee Name', match: ['employee name', 'employee'] },
   { key: 'designation', label: 'Designation', match: ['designation'] },
-  { key: 'organization', label: 'Organization', match: ['organization', 'organisation', 'company'] },
+  { key: 'organization', label: 'Organization', match: ['organization', 'organisation', 'company', 'working at'] },
   { key: 'organizationType', label: 'Organization Type', match: ['organization type', 'organisation type'] },
   { key: 'workingSince', label: 'Working Since', match: ['working since'] },
+  { key: 'employmentStatus', label: 'Employment Status', match: ['employment status', 'employment', 'job status', 'currently employed'] },
   { key: 'comment', label: 'Comments', match: ['comment', 'suggestion'] },
   { key: 'submittedAt', label: 'Submitted At', match: ['completion time', 'submitted', 'timestamp'] },
 ];
@@ -549,8 +551,11 @@ function SurveyResults({ programs }: { programs: ProgramOption[] }) {
   );
 }
 
-function AnalysisReport({ canEdit }: { canEdit: boolean }) {
+function AnalysisReport({ programs, canEdit }: { programs: ProgramOption[]; canEdit: boolean }) {
   const [formType, setFormType] = useState('exit');
+  // The alumni report is the university's per-programme, per-admission-batch format.
+  const alumni = formType === 'alumni';
+  const [programId, setProgramId] = useState(programs[0]?.id || '');
   const [year, setYear] = useState('');
   const [years, setYears] = useState<number[]>([]);
   const [available, setAvailable] = useState<string[]>([]);
@@ -565,8 +570,9 @@ function AnalysisReport({ canEdit }: { canEdit: boolean }) {
     setChosen([]);
     setYear('');
     setError(null);
-    apiService.getSurveyAnalysis(formType).then(d => { setAvailable(d.available); setYears(d.years || []); }).catch((e: any) => setError(e.message));
-  }, [formType]);
+    const load = alumni ? apiService.getAlumniReport(programId) : apiService.getSurveyAnalysis(formType);
+    load.then(d => { setAvailable(d.available); setYears(d.years || []); }).catch((e: any) => setError(e.message));
+  }, [formType, programId, alumni]);
 
   const changeYear = (value: string) => {
     setYear(value);
@@ -579,7 +585,7 @@ function AnalysisReport({ canEdit }: { canEdit: boolean }) {
     setBusy(true);
     setError(null);
     try {
-      const d = await apiService.getSurveyAnalysis(formType, chosen, year);
+      const d = alumni ? await apiService.getAlumniReport(programId, chosen) : await apiService.getSurveyAnalysis(formType, chosen, year);
       setData(d);
       setSentTo(Object.fromEntries(d.groups.map((g: any) => [g.key, g.populationSource === 'entered' ? String(g.population) : ''])));
     } catch (e: any) {
@@ -595,7 +601,7 @@ function AnalysisReport({ canEdit }: { canEdit: boolean }) {
     try {
       for (const g of data.groups) {
         const entered = g.populationSource === 'entered' ? String(g.population) : '';
-        if ((sentTo[g.key] || '').trim() !== entered) await apiService.setSurveyRecipients(formType, g.key, (sentTo[g.key] || '').trim());
+        if ((sentTo[g.key] || '').trim() !== entered) await apiService.setSurveyRecipients(formType, g.recipientsKey || g.key, (sentTo[g.key] || '').trim());
       }
     } catch (e: any) {
       setError(e.message);
@@ -604,8 +610,9 @@ function AnalysisReport({ canEdit }: { canEdit: boolean }) {
     }
     await generate();
   };
-  const groupLabel = formType === 'exit' ? 'Graduating Batches' : formType === 'internship' ? 'Programs' : 'Graduation Years';
-  const sentToWord = formType === 'exit' ? 'students of the batch' : formType === 'internship' ? "students of the interns' batches" : formType === 'alumni' ? 'graduates of that year' : '';
+  const groupLabel = formType === 'exit' ? 'Graduating Batches' : formType === 'internship' ? 'Programs' : alumni ? 'Batches' : 'Graduation Years';
+  const sentToWord = formType === 'exit' || alumni ? 'students of the batch' : formType === 'internship' ? "students of the interns' batches" : '';
+  const responsesOf = (g: any) => (g.stats ? g.stats.responses : g.responses);
 
   return (
     <div className="space-y-4">
@@ -616,13 +623,22 @@ function AnalysisReport({ canEdit }: { canEdit: boolean }) {
             {FORM_TYPES.map(f => <option key={f.id} value={f.id}>{f.title}</option>)}
           </select>
         </div>
-        <div className="flex flex-col gap-1">
-          <label className={label}>{formType === 'internship' ? 'Internship Year' : 'Year'}</label>
-          <select aria-label="Analysis year" className={input} value={year} onChange={e => changeYear(e.target.value)}>
-            <option value="">All years</option>
-            {years.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-        </div>
+        {alumni ? (
+          <div className="flex flex-col gap-1">
+            <label className={label}>Program</label>
+            <select aria-label="Analysis program" className={input} value={programId} onChange={e => setProgramId(e.target.value)}>
+              {programs.map(p => <option key={p.id} value={p.id}>{p.code || p.id.toUpperCase()} - {p.name}</option>)}
+            </select>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1">
+            <label className={label}>{formType === 'internship' ? 'Internship Year' : 'Year'}</label>
+            <select aria-label="Analysis year" className={input} value={year} onChange={e => changeYear(e.target.value)}>
+              <option value="">All years</option>
+              {years.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+        )}
         <div className="flex flex-col gap-1">
           <label className={label}>{groupLabel} (none ticked = all)</label>
           <div className="flex flex-wrap gap-3 text-xs text-slate-700 min-h-[34px] items-center">
@@ -643,7 +659,7 @@ function AnalysisReport({ canEdit }: { canEdit: boolean }) {
       {error && <Notice error>{error}</Notice>}
       {data && data.groups.length > 0 && (
         <div className={`${panel} space-y-2 print:hidden`}>
-          <h3 className="text-sm font-bold text-slate-900">Responded out of how many</h3>
+          <h3 className="text-sm font-bold text-slate-900">{alumni ? 'Total alumni of each batch' : 'Responded out of how many'}</h3>
           <p className="text-xs text-slate-500">
             Only some people fill in a survey. {canEdit ? 'Enter how many people each survey was sent to' : 'QA enters how many people each survey was sent to'}
             {sentToWord ? `; left blank, the report counts the ${sentToWord} from admissions.` : '; there is no admissions count for employers, so it must be entered.'}
@@ -654,7 +670,7 @@ function AnalysisReport({ canEdit }: { canEdit: boolean }) {
               {data.groups.map((g: any) => (
                 <tr key={g.key}>
                   <td className="pr-6 py-1 font-semibold">{g.key}</td>
-                  <td className="pr-6">{g.stats.responses}</td>
+                  <td className="pr-6">{responsesOf(g)}</td>
                   <td className="pr-6">
                     {canEdit ? (
                       <input aria-label={`Sent to for ${g.key}`} className={`${input} w-24 py-1`} inputMode="numeric"
@@ -663,7 +679,7 @@ function AnalysisReport({ canEdit }: { canEdit: boolean }) {
                     ) : (g.population ?? 'Not entered')}
                   </td>
                   <td>
-                    {g.population && g.population >= g.stats.responses ? `${Math.round((g.stats.responses / g.population) * 100)}%`
+                    {g.population && g.population >= responsesOf(g) ? `${Math.round((responsesOf(g) / g.population) * 100)}%`
                       : g.population ? <span className="text-red-600 font-semibold">Fewer than responded, please check</span> : '—'}
                   </td>
                 </tr>
@@ -675,7 +691,7 @@ function AnalysisReport({ canEdit }: { canEdit: boolean }) {
           )}
         </div>
       )}
-      {data && <div className={`${panel} qa-print-area`}><SurveyAnalysisReport data={data} /></div>}
+      {data && <div className={`${panel} qa-print-area`}>{data.program ? <AlumniSurveyReport data={data} /> : <SurveyAnalysisReport data={data} />}</div>}
     </div>
   );
 }
@@ -707,7 +723,7 @@ export default function SurveyManager({ programs, canEdit }: { programs: Program
         <>
           {tab === 'upload' && <UploadResponses programs={programs} />}
           {tab === 'results' && <SurveyResults programs={programs} />}
-          {tab === 'analysis' && <AnalysisReport canEdit={canEdit} />}
+          {tab === 'analysis' && <AnalysisReport programs={programs} canEdit={canEdit} />}
           {tab === 'forms' && <FormsAndMapping programs={programs} canEdit={canEdit} />}
         </>
       )}
